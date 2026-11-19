@@ -94,12 +94,7 @@
     </div>
 
     <script type="module">
-      import { createWand } from '../lib/wand.js';
-      import { runCalibration } from '../lib/calibrate.js';
-      import { runMinigame, starsFor } from '../lib/engine.js';
-      import { createBody } from '../lib/body.js';
-      import { createVoice } from '../lib/voice.js';
-      import { theme, resolveTheme } from '../lib/theme.js';
+      import { createWand, runCalibration, starsFor, mountGame } from '../sdk/index.js';
       import { games, RUN_ORDER } from './games/index.js';
 
       const wand = createWand({ surface: 'arcade' });
@@ -114,40 +109,25 @@
       const saveRun = run => { try { sessionStorage.setItem(RUN_KEY, JSON.stringify(run)); } catch {} };
       const startRun = () => { saveRun({ started: Date.now(), results: {} }); location.search = `?game=${RUN_ORDER[0]}&run=0`; };
 
-      addEventListener('keydown', event => {
-        if (event.key.toLowerCase() === 'c' && !wand.capturing) runCalibration(wand);
-      });
-
       if (game) {
-        // ---------------- a game ----------------
+        // ---------------- a game (hosted by the SDK) ----------------
         const canvas = document.querySelector('#stage');
-        canvas.hidden = false;
-        wand.attachMouse(canvas);
-        const body = game.needs?.includes('body') ? createBody() : null;
-        body?.start().catch(error => console.warn('Body tracking unavailable:', error));
-        // Voice themes only where targets are themeable (avoids room-chatter toasts elsewhere).
-        const voice = game.themed ? createVoice() : null;
-
         const step = Number(params.get('run'));
         const inRun = params.has('run') && RUN_ORDER[step] === game.id;
         const nextId = inRun ? RUN_ORDER[step + 1] : null;
-        const engine = runMinigame(game, {
-          canvas, wand, body, voice, onExit: toMenu,
+        mountGame(game, {
+          canvas, wand, onExit: toMenu,
           stage: inRun ? { index: step, total: RUN_ORDER.length } : null,
           next: !inRun ? null : nextId
             ? { label: byId(nextId).title, go: () => { location.search = `?game=${nextId}&run=${step + 1}`; } }
             : { label: 'run results', go: () => { location.search = '?run=done'; } },
           onFinish: inRun ? result => { const run = loadRun(); run.results[game.id] = result; saveRun(run); } : null,
         });
-        // Say a theme ("teddy bears") → the targets change, mid-round included.
-        voice?.on('command', async text => {
-          const next = await resolveTheme(text);
-          if (!next) return;
-          theme.set(next);
-          engine.toast(next.sprite ? `${next.sprite}  ${next.name}!` : 'Back to balloons');
-        });
       } else {
         // ---------------- home ----------------
+        addEventListener('keydown', event => {
+          if (event.key.toLowerCase() === 'c' && !wand.capturing) runCalibration(wand);
+        });
         const menu = document.querySelector('#menu');
         const cursor = document.querySelector('#menuCursor');
         const list = document.querySelector('#gameList');

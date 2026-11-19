@@ -99,6 +99,9 @@ work/platformio-venv/bin/python pointer/pointer_bridge.py --simulate
 
 ## Codex Arcade (minigames)
 
+**Build your own games:** see [docs/SDK.md](docs/SDK.md) — `./scripts/new-game.sh <id>`
+scaffolds one from the template and the playground runs it directly.
+
 The home page lists the four games and a **Play all** run (Balloon Pop → Bob & Weave →
 Bodega Bucks → Gauntlet) that ends on a summary with 1–3 stars per game (thresholds
 are each game's `stars`). Keys: `1`–`4` open a game, `Enter` plays all, `Esc` returns
