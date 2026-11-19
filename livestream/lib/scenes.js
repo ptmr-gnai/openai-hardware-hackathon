@@ -210,6 +210,164 @@ function paintBodega(g, W, H, sky) {
   g.fillText('🐈', W * 0.1, top + H * 0.02);
 }
 
+// ---- Times Square: a night street in one-point perspective -----------------
+// Vanishing point matches the Bob & Weave / Gauntlet corridor (W/2, 0.38 H),
+// so obstacles fly straight down the street. All signage is made up.
+const TS_VP_Y = 0.38;
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// Point on a wall: side -1 = left, +1 = right; z 0 = near, 1 = far; v 0 = top, 1 = bottom.
+function wallPoint(W, H, side, z, v) {
+  const vpX = W / 2;
+  const vpY = H * TS_VP_Y;
+  const nearX = side < 0 ? 0 : W;
+  const farX = vpX + side * W * 0.07;
+  const x = lerp(nearX, farX, z);
+  const top = lerp(-H * 0.15, vpY - H * 0.2, z);
+  const bottom = lerp(H * 0.8, vpY + H * 0.06, z);
+  return [x, lerp(top, bottom, v)];
+}
+
+function quad(g, pts) {
+  g.beginPath();
+  g.moveTo(...pts[0]);
+  for (const p of pts.slice(1)) g.lineTo(...p);
+  g.closePath();
+}
+
+// A billboard on a wall between depths z0..z1 and heights v0..v1.
+function wallRect(W, H, side, z0, z1, v0, v1) {
+  return [wallPoint(W, H, side, z0, v0), wallPoint(W, H, side, z1, v0), wallPoint(W, H, side, z1, v1), wallPoint(W, H, side, z0, v1)];
+}
+
+// Draw text onto a billboard quad with an affine map (close enough for signage).
+function billboardText(g, pts, text, color, weight = 900) {
+  // Map left-to-right on screen, whichever wall it's on (else the right wall mirrors).
+  const [nearTop, farTop, farBottom, nearBottom] = pts;
+  const leftToRight = nearTop[0] < farTop[0];
+  const p00 = leftToRight ? nearTop : farTop;
+  const p10 = leftToRight ? farTop : nearTop;
+  const p01 = leftToRight ? nearBottom : farBottom;
+  g.save();
+  // transform() (not setTransform) so the canvas's devicePixelRatio scale is kept.
+  g.transform(
+    (p10[0] - p00[0]) / 100, (p10[1] - p00[1]) / 100,
+    (p01[0] - p00[0]) / 100, (p01[1] - p00[1]) / 100,
+    p00[0], p00[1],
+  );
+  g.font = `${weight} 34px system-ui, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = color;
+  g.fillText(text, 50, 52, 92);
+  g.restore();
+}
+
+const TS_BOARDS = [
+  // side, z0, z1, v0, v1, background, text, text colour
+  [-1, 0.00, 0.22, 0.05, 0.30, '#e63946', 'BROADWAY', '#fff'],
+  [-1, 0.00, 0.22, 0.36, 0.58, '#111', 'OPEN LATE', '#ffd60a'],
+  [-1, 0.26, 0.48, 0.10, 0.42, '#3a86ff', 'NYC', '#fff'],
+  [-1, 0.52, 0.70, 0.06, 0.30, '#ffd60a', 'HOT DOGS $2', '#111'],
+  [-1, 0.52, 0.70, 0.36, 0.56, '#7209b7', 'CODEX', '#fff'],
+  [-1, 0.74, 0.88, 0.12, 0.40, '#06d6a0', 'SHOW', '#111'],
+  [1, 0.00, 0.22, 0.05, 0.34, '#ff006e', 'TONIGHT', '#fff'],
+  [1, 0.00, 0.22, 0.40, 0.58, '#111', '★ ARCADE ★', '#06d6a0'],
+  [1, 0.26, 0.48, 0.08, 0.30, '#ffbe0b', 'PIZZA', '#111'],
+  [1, 0.26, 0.48, 0.36, 0.56, '#118ab2', '42 ST', '#fff'],
+  [1, 0.52, 0.70, 0.10, 0.44, '#fb5607', 'DUCK!', '#fff'],
+  [1, 0.74, 0.88, 0.06, 0.32, '#8338ec', 'LIVE', '#fff'],
+];
+// Boards whose colour cycles each frame (indices into TS_BOARDS).
+const TS_ANIMATED = [2, 9, 11];
+
+function paintTimesSquare(g, W, H, sky) {
+  gradient(g, W, H, sky);
+  const vpX = W / 2;
+  const vpY = H * TS_VP_Y;
+  // Far tower of stacked screens at the end of the street.
+  const towerW = W * 0.1;
+  const towerTop = vpY - H * 0.32;
+  g.fillStyle = '#14112b';
+  g.fillRect(vpX - towerW / 2, towerTop, towerW, vpY - towerTop + H * 0.05);
+  ['#ff006e', '#3a86ff', '#ffd60a', '#06d6a0'].forEach((c, i) => {
+    g.shadowColor = c;
+    g.shadowBlur = 20;
+    g.fillStyle = c;
+    g.fillRect(vpX - towerW * 0.4, towerTop + H * 0.03 + i * H * 0.07, towerW * 0.8, H * 0.05);
+  });
+  g.shadowBlur = 0;
+  // Street and sidewalks.
+  const [lNearB, lFarB] = [wallPoint(W, H, -1, 0, 1), wallPoint(W, H, -1, 1, 1)];
+  const [rNearB, rFarB] = [wallPoint(W, H, 1, 0, 1), wallPoint(W, H, 1, 1, 1)];
+  g.fillStyle = '#1b1b24';
+  quad(g, [lNearB, lFarB, rFarB, rNearB, [W, H], [0, H]]);
+  g.fill();
+  // Lane lines converging to the vanishing point.
+  g.strokeStyle = '#ffd60a55';
+  g.lineWidth = 3;
+  g.setLineDash([24, 26]);
+  for (const x of [-0.18, 0.18]) {
+    g.beginPath();
+    g.moveTo(vpX + x * W * 2.2, H);
+    g.lineTo(vpX + x * W * 0.12, vpY + H * 0.08);
+    g.stroke();
+  }
+  g.setLineDash([]);
+  // Crosswalk near the viewer.
+  g.fillStyle = '#ffffff30';
+  for (let i = 0; i < 9; i++) {
+    const x0 = W * (0.05 + i * 0.105);
+    g.beginPath();
+    g.moveTo(x0, H * 0.9);
+    g.lineTo(x0 + W * 0.06, H * 0.9);
+    g.lineTo(x0 + W * 0.065, H);
+    g.lineTo(x0 - W * 0.005, H);
+    g.fill();
+  }
+  // Building walls.
+  for (const side of [-1, 1]) {
+    g.fillStyle = '#0d0b1d';
+    quad(g, wallRect(W, H, side, 0, 1, 0, 1));
+    g.fill();
+    // Floor lines for depth.
+    g.strokeStyle = '#ffffff0d';
+    g.lineWidth = 1;
+    for (let v = 0.1; v < 1; v += 0.1) {
+      g.beginPath();
+      g.moveTo(...wallPoint(W, H, side, 0, v));
+      g.lineTo(...wallPoint(W, H, side, 1, v));
+      g.stroke();
+    }
+  }
+  // Billboards (static ones; animated ones are redrawn every frame).
+  TS_BOARDS.forEach(([side, z0, z1, v0, v1, bg, text, fg], i) => {
+    const pts = wallRect(W, H, side, z0, z1, v0, v1);
+    g.shadowColor = bg;
+    g.shadowBlur = 24;
+    g.fillStyle = bg;
+    quad(g, pts);
+    g.fill();
+    g.shadowBlur = 0;
+    if (!TS_ANIMATED.includes(i)) billboardText(g, pts, text, fg);
+  });
+  // Soft dim so obstacles and targets stay the brightest things on screen.
+  g.fillStyle = '#05051080';
+  g.fillRect(0, 0, W, H);
+}
+
+function animateTimesSquare(g, W, H, t) {
+  for (const i of TS_ANIMATED) {
+    const [side, z0, z1, v0, v1, , text] = TS_BOARDS[i];
+    const pts = wallRect(W, H, side, z0, z1, v0, v1);
+    const hue = (t * 40 + i * 70) % 360;
+    g.fillStyle = `hsl(${hue}, 85%, 45%)`;
+    quad(g, pts);
+    g.fill();
+    billboardText(g, pts, text, '#fff');
+  }
+}
+
 const SCENES = {
   sky(g, W, H, t, sky) {
     gradient(g, W, H, sky);
@@ -222,6 +380,11 @@ const SCENES = {
 
   subway(g, W, H, t, sky) {
     g.drawImage(cachedStatic('subway', W, H, sky, paintSubway), 0, 0, W, H);
+  },
+
+  timesSquare(g, W, H, t, sky) {
+    g.drawImage(cachedStatic('timesSquare', W, H, sky, paintTimesSquare), 0, 0, W, H);
+    animateTimesSquare(g, W, H, t);
   },
 
   bodega(g, W, H, t, sky) {

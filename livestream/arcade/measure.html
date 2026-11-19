@@ -27,7 +27,7 @@
     <canvas id="stage"></canvas>
     <div id="panel">
       <h1 id="title">Wand measurement</h1>
-      <p id="instruction">About a minute, four short tests. Press A, click or Enter to begin.</p>
+      <p id="instruction">About a minute, four short tests. Press A, click or Enter to begin. Esc returns to the menu.</p>
       <div id="progress"><div></div></div>
     </div>
     <div id="results" hidden></div>
@@ -257,7 +257,10 @@
       draw();
 
       onPress = () => { if (!running) run(); };
-      addEventListener('keydown', e => { if (e.key === 'Enter' && !running) run(); });
+      addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !running) run();
+        if (e.key === 'Escape') location.href = '/arcade/';
+      });
       addEventListener('click', e => { if (!running && e.target.tagName !== 'BUTTON') run(); });
     </script>
   </body>

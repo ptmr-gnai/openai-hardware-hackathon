@@ -32,7 +32,7 @@ export default {
   },
 
   draw(state, ctx) {
-    dodgeLayer.drawWorld(state?.dodge, ctx);
+    dodgeLayer.drawWorld(state?.dodge, ctx, { scene: 'timesSquare', sky: ['#0b0820', '#2a1450'] });
     balloonLayer.draw(state?.pop, ctx);
     dodgeLayer.drawOverlay(state?.dodge, ctx);
   },

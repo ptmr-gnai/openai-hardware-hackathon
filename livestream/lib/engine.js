@@ -147,8 +147,16 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
   addEventListener('keydown', event => {
     if (event.key === 'Enter' && run.phase === 'intro') start();
     if (event.key === 'Enter' && run.phase === 'results' && run.phaseT > 1.2) advance();
-    if (event.key === 'Escape' && !wand.capturing) onExit?.();
   });
+  // Esc → menu from any phase (intro, countdown, mid-round, results). Capture
+  // phase so no other key handler can swallow it; calibration's own Esc
+  // (cancel) takes priority while its overlay is open.
+  addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !wand.capturing) {
+      event.preventDefault();
+      onExit?.();
+    }
+  }, { capture: true });
 
   let last = performance.now();
   function frame(now) {
@@ -216,30 +224,38 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
           W / 2, H * 0.76, { size: s * 0.035, color: '#ffdc5d' });
       }
     }
-    if (voice?.supported) {
-      // Always-on mic: a quiet status line, plus a live caption while you talk.
-      const status = voice.error
-        ? `🎤 ${voice.error}`
-        : voice.enabled ? '🎤 listening — say a theme (M mutes)' : '🎤 muted (M to listen)';
-      label(g, status, W / 2, 30, { size: 14, weight: 600, color: voice.error ? '#ff5d8f' : '#ffffffaa' });
-      if (voice.interim) label(g, `“${voice.interim}”`, W / 2, 62, { size: 22, weight: 600, color: '#ffdc5d' });
-    }
     if (toast) {
       g.globalAlpha = Math.min(1, toast.t * 2);
       label(g, toast.text, W / 2, H - 60, { size: 22, weight: 700, color: '#ffdc5d' });
       g.globalAlpha = 1;
     }
+
+    // Status corner (bottom-right), stacked bottom-up in one quiet style so the
+    // play area stays clear: wand · distance · mic (+ live caption) · Esc.
+    const corner = [];
     const ws = wand.state;
+    corner.push({
+      text: ws.connected
+        ? (ws.calibrated ? 'Wand ● · B recenter · C calibrate' : 'Wand ● · not calibrated — press C')
+        : 'Wand ○ · mouse mode',
+      color: ws.connected ? '#ffffffb0' : '#ffffff80',
+    });
     if (ws.connected && (ws.distanceMm || wand.calibration?.dist0)) {
-      const dist = ws.distanceMm ? `📏 ${(ws.distanceMm / 1000).toFixed(2)} m` : '📏 —';
+      const dist = ws.distanceMm ? `${(ws.distanceMm / 1000).toFixed(2)} m` : '— m';
       const auto = !ws.distanceAuto ? 'auto-distance off (T)'
         : wand.calibration?.dist0 ? `gain ×${ws.distanceScale.toFixed(2)} (T)` : 'recalibrate (C) for auto-distance';
-      label(g, `${dist} · ${auto}`, W - 16, H - 38, { size: 13, weight: 700, align: 'right', color: '#ffdc5d' });
+      corner.push({ text: `Distance ${dist} · ${auto}`, color: '#ffffffb0' });
     }
-    const chip = wand.state.connected
-      ? (wand.state.calibrated ? 'WAND ● B recenter · C calibrate' : 'WAND ● not calibrated for this screen — press C')
-      : 'WAND ○ disconnected — mouse mode';
-    label(g, chip, W - 16, H - 18, { size: 12, weight: 600, align: 'right', color: wand.state.connected ? '#ffdc5d' : '#aaa' });
+    if (voice?.supported) {
+      corner.push(voice.error
+        ? { text: `Mic: ${voice.error}`, color: '#ff8fab' }
+        : { text: voice.enabled ? 'Mic on · say a theme · M mutes' : 'Mic muted · M to listen', color: '#ffffffb0' });
+      if (voice.interim) corner.push({ text: `“${voice.interim}”`, color: '#ffdc5d' });
+    }
+    corner.push({ text: 'Esc · Menu', color: '#ffffffb0' });
+    corner.forEach((line, i) => {
+      label(g, line.text, W - 16, H - 18 - i * 18, { size: 12, weight: 600, align: 'right', color: line.color });
+    });
   }
 
   requestAnimationFrame(frame);

@@ -1,3 +1,5 @@
+import { drawScene } from '../../lib/scenes.js';
+
 // Bob & Weave: obstacles fly at your head. High beams → duck (bob).
 // Side blocks → move your head the other way (weave). Return to center between.
 // Uses the body part (webcam). Keyboard fallback: Space/↓ ducks, ←/→ dodge.
@@ -211,14 +213,17 @@ export const dodgeLayer = {
     if (state.message && (state.message.t -= dt) <= 0) state.message = null;
   },
 
-  drawWorld(state, ctx) {
+  // opts.scene: draw a scene from lib/scenes.js instead of the plain corridor
+  // (it must share the corridor's vanishing point, 0.38 H).
+  drawWorld(state, ctx, opts = {}) {
     const { g, W, H, body } = ctx;
     const vpY = H * 0.38;
     const duck = body.keyDuck ? 1.2 : body.duckAmount;
     const side = body.dodgeAmount;
     g.save();
     if (state?.shake) g.translate(ctx.rand(-12, 12) * state.shake * 3, ctx.rand(-12, 12) * state.shake * 3);
-    drawCorridor(g, W, H, vpY);
+    if (opts.scene) drawScene(opts.scene, g, W, H, performance.now() / 1000, opts.sky);
+    else drawCorridor(g, W, H, vpY);
 
     let cue = null;
     for (const ob of [...(state?.obstacles ?? [])].sort((a, b) => a.t - b.t)) {
