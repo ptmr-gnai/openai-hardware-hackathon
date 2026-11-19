@@ -204,6 +204,13 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
       label(g, toast.text, W / 2, H - 60, { size: 22, weight: 700, color: '#ffdc5d' });
       g.globalAlpha = 1;
     }
+    const ws = wand.state;
+    if (ws.connected && (ws.distanceMm || wand.calibration?.dist0)) {
+      const dist = ws.distanceMm ? `📏 ${(ws.distanceMm / 1000).toFixed(2)} m` : '📏 —';
+      const auto = !ws.distanceAuto ? 'auto-distance off (T)'
+        : wand.calibration?.dist0 ? `gain ×${ws.distanceScale.toFixed(2)} (T)` : 'recalibrate (C) for auto-distance';
+      label(g, `${dist} · ${auto}`, W - 16, H - 38, { size: 13, weight: 700, align: 'right', color: '#ffdc5d' });
+    }
     const chip = wand.state.connected
       ? (wand.state.calibrated ? 'WAND ● B recenter · C calibrate' : 'WAND ● not calibrated for this screen — press C')
       : 'WAND ○ disconnected — mouse mode';

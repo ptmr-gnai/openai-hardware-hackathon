@@ -11,7 +11,7 @@ export const CAL_TARGETS = [
   { x: 0.5, y: 0.88, label: 'BOTTOM edge' },
 ];
 
-// samples[i] = { yaw, heading?: {x,y,z}, pitch: {x,y,z} } recorded while aiming at CAL_TARGETS[i].
+// samples[i] = { yaw, heading?: {x,y,z}, pitch: {x,y,z}, distance? } recorded while aiming at CAL_TARGETS[i].
 // AHRS firmware reports a heading per body axis; once the forward axis is known
 // (the one whose elevation followed the up/down targets) we use ITS heading.
 export function solveCalibration(samples, targets = CAL_TARGETS) {
@@ -32,8 +32,23 @@ export function solveCalibration(samples, targets = CAL_TARGETS) {
     yaw0: mean([yawOf(c), yawOf(t), yawOf(b)]),
     pitch0: mean([c.pitch[pitchKey], l.pitch[pitchKey], r.pitch[pitchKey]]),
     spanDeg: Math.round(Math.abs(dYaw) / 2),
+    // ToF distance (mm) at calibration: the reference for distance-aware gain.
+    dist0: medianOf(samples.map(s => s.distance).filter(d => d > 0), 3),
   };
 }
+
+function medianOf(values, minCount = 1) {
+  if (values.length < minCount) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+// Distance-aware gain. The "laser" lands at offset ≈ distance × tan(angle) on the
+// screen, so the same turn moves the hit point further when you stand further
+// back. Calibration fixed the gain at dist0; scale it by distance / dist0.
+const DIST_MIN_MM = 40;
+const DIST_MAX_MM = 2500;
+const SCALE_RANGE = [0.5, 2];
 
 const LEGACY_KEY = 'wandCalibration.v2'; // written by the livestream page
 
@@ -56,7 +71,33 @@ export function createWand({ url = '/pointer.json', surface = 'arcade', pollMs =
   const state = {
     connected: false, x: 0.5, y: 0.5, source: 'none', calibrated: ownCalibration(), session: null,
     speed: 0, shake: 0, held: false,
+    // distanceMm: smoothed ToF distance to what the wand points at (null = none
+    // recently); distanceScale: gain multiplier applied to the pointer;
+    // distanceAuto: T toggles distance-aware gain (persisted).
+    distanceMm: null, distanceScale: 1,
+    distanceAuto: (() => { try { return localStorage.getItem('wand.distanceAuto') !== 'off'; } catch { return true; } })(),
   };
+  let distanceAt = 0;
+  function trackDistance(mm) {
+    const now = performance.now();
+    if (mm >= DIST_MIN_MM && mm <= DIST_MAX_MM) {
+      // Dropouts (glossy/black screens, out of range) are skipped; valid readings smoothed.
+      state.distanceMm = state.distanceMm ? state.distanceMm + (mm - state.distanceMm) * 0.2 : mm;
+      distanceAt = now;
+    } else if (now - distanceAt > 1500) {
+      state.distanceMm = null; // stale; the last scale is held, so the pointer doesn't jump
+    }
+    const target = state.distanceAuto && cal?.dist0 && state.distanceMm
+      ? Math.min(SCALE_RANGE[1], Math.max(SCALE_RANGE[0], state.distanceMm / cal.dist0))
+      : state.distanceAuto && state.distanceMm ? state.distanceScale : 1;
+    state.distanceScale += (target - state.distanceScale) * 0.1;
+  }
+  addEventListener('keydown', event => {
+    if (event.key.toLowerCase() !== 't' || event.target?.closest?.('input, textarea')) return;
+    state.distanceAuto = !state.distanceAuto;
+    try { localStorage.setItem('wand.distanceAuto', state.distanceAuto ? 'on' : 'off'); } catch {}
+    emit('distanceAuto', state.distanceAuto);
+  });
   let motionT = null;
   let motionX = 0.5;
   let motionY = 0.5;
@@ -101,15 +142,17 @@ export function createWand({ url = '/pointer.json', surface = 'arcade', pollMs =
     if (!cal || sample.yaw === undefined) return null;
     const yaw = yawOf(sample);
     const pitches = sample.pitch;
+    const k = state.distanceScale;
     return {
-      x: clamp01(0.5 + (yaw - cal.yaw0) * cal.kx),
-      y: clamp01(0.5 + (pitches[cal.pitchKey] - cal.pitch0) * cal.ky),
+      x: clamp01(0.5 + (yaw - cal.yaw0) * cal.kx * k),
+      y: clamp01(0.5 + (pitches[cal.pitchKey] - cal.pitch0) * cal.ky * k),
     };
   }
 
   function handle(reading) {
     setConnected(true);
     state.session = reading.session;
+    const current = { yaw: reading.rawYaw, heading: reading.rawHeading, pitch: reading.rawPitch };
     if (cal && reading.session && cal.session !== reading.session) {
       // Calibrations from before session tracking were made in this bridge run.
       if (cal.session) {
@@ -119,7 +162,7 @@ export function createWand({ url = '/pointer.json', surface = 'arcade', pollMs =
       cal.session = reading.session;
       save();
     }
-    const current = { yaw: reading.rawYaw, heading: reading.rawHeading, pitch: reading.rawPitch };
+    trackDistance(reading.distanceMm);
     if (lastRecenter !== null && reading.recenterCount !== lastRecenter && cal) {
       cal.yaw0 = yawOf(current);
       cal.pitch0 = reading.rawPitch[cal.pitchKey];
@@ -146,6 +189,7 @@ export function createWand({ url = '/pointer.json', surface = 'arcade', pollMs =
         ? { yaw: reading.pressYaw, heading: reading.pressHeading, pitch: { ...reading.pressPitch } }
         : { ...current, pitch: { ...reading.rawPitch } };
       if (capture) {
+        sample.distance = reading.distanceMm ?? null;
         capture(sample);
         capture = null;
       } else {

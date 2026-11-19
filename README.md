@@ -69,6 +69,10 @@ to whatever the wand points at (~30 Hz, up to ~2 m), published as `distanceMm`.
 StickC HATs sit on the odd column of the 16-pin Hat2 header: ToF SDA = GPIO8,
 SCL = GPIO0, powered by the PM1 3.3 V LDO (off by default; firmware enables it).
 It must use Arduino `Wire`: M5Unified's internal bus owns I2C controller 1 (`Wire1`).
+In the arcade, calibration records your distance to the screen; the pointer gain
+then scales with distance / calibrated distance (×0.5–×2), since the "laser" hit
+point moves ∝ distance × tan(angle). A HUD chip shows `📏` distance and gain;
+`T` toggles auto-distance.
 
 The firmware streams over USB and Bluetooth LE (`StickS3-Wand`) at the same time.
 The bridge picks USB when plugged in and Bluetooth otherwise, switching and
