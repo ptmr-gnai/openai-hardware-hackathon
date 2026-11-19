@@ -62,6 +62,12 @@ Bridge its tilt and buttons into the frontend reticle:
 work/platformio-venv/bin/python pointer/pointer_bridge.py
 ```
 
+The bridge defaults to gyro air-mouse mode (`--mode tilt` for the old accelerometer
+mapping). Calibrate in the page: click **Calibrate wand** (or press `c`), then aim the
+stick's tip at each of the 5 pink dots and press A. The fit (axis direction, gain, and
+which end is "front") is saved in the browser. Set the stick down still for a second
+to refresh gyro bias.
+
 Button A is the trigger; Button B recenters the pointer. For frontend-only testing:
 
 ```sh

@@ -17,6 +17,127 @@ const heartRateValue = document.querySelector('#heartRateValue');
 const rrValue = document.querySelector('#rrValue');
 const pointerReticle = document.querySelector('#pointerReticle');
 const pointerStatus = document.querySelector('#pointerStatus');
+const calTarget = document.querySelector('#calTarget');
+const calPrompt = document.querySelector('#calPrompt');
+const calibrateButton = document.querySelector('#calibrateButton');
+
+// --- Wand calibration -------------------------------------------------------
+// The bridge publishes unclamped gyro angles (rawYaw, rawPitch.{x,y,z}) plus
+// press counters. Calibration = aim at 5 targets and press A on each; from the
+// recorded angles we solve sign + gain per axis and which device axis is "front".
+const CAL_KEY = 'wandCalibration.v2'; // v2: pitch is absolute elevation
+const CAL_TARGETS = [
+  { x: 0.5, y: 0.5, label: 'center' },
+  { x: 0.1, y: 0.5, label: 'LEFT edge' },
+  { x: 0.9, y: 0.5, label: 'RIGHT edge' },
+  { x: 0.5, y: 0.12, label: 'TOP edge' },
+  { x: 0.5, y: 0.88, label: 'BOTTOM edge' },
+];
+let wandCal = null;
+try { wandCal = JSON.parse(localStorage.getItem(CAL_KEY)); } catch {}
+let calRun = null; // { step, samples, triggerCount }
+let lastCounts = null;
+// 1€ filter: heavy smoothing when the wand is held steady, little when it moves fast.
+function oneEuro({ minCutoff = 1.2, beta = 0.015, dCutoff = 1.0 } = {}) {
+  let prev = null;
+  let prevDeriv = 0;
+  let prevTime = 0;
+  const alpha = (cutoff, dt) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
+  return (value, time) => {
+    if (prev === null) { prev = value; prevTime = time; return value; }
+    const dt = Math.max(1e-3, time - prevTime);
+    prevTime = time;
+    const deriv = (value - prev) / dt;
+    prevDeriv += (deriv - prevDeriv) * alpha(dCutoff, dt);
+    const cutoff = minCutoff + beta * Math.abs(prevDeriv);
+    prev += (value - prev) * alpha(cutoff, dt);
+    return prev;
+  };
+}
+const filterX = oneEuro();
+const filterY = oneEuro();
+
+function showCalStep() {
+  const target = CAL_TARGETS[calRun.step];
+  calTarget.hidden = false;
+  calTarget.classList.remove('hit');
+  calTarget.style.left = `${target.x * 100}%`;
+  calTarget.style.top = `${target.y * 100}%`;
+  calPrompt.hidden = false;
+  calPrompt.textContent =
+    `Step ${calRun.step + 1}/${CAL_TARGETS.length}: aim at the pink dot (${target.label}) and press A · Esc cancels`;
+}
+
+function startCalibration() {
+  calRun = { step: 0, samples: [], triggerCount: null };
+  showCalStep();
+}
+
+function endCalibration(message) {
+  calRun = null;
+  calTarget.hidden = true;
+  calPrompt.textContent = message;
+  setTimeout(() => { if (!calRun) calPrompt.hidden = true; }, 4000);
+}
+
+function solveCalibration(samples) {
+  const [c, l, r, t, b] = samples;
+  const mean = values => values.reduce((sum, v) => sum + v, 0) / values.length;
+  const dYaw = r.yaw - l.yaw;
+  if (Math.abs(dYaw) < 4) throw new Error('Left/right aim barely moved — turn your wrist more and retry.');
+  const axis = ['x', 'y', 'z']
+    .map(key => ({ key, d: b.pitch[key] - t.pitch[key] }))
+    .sort((p, q) => Math.abs(q.d) - Math.abs(p.d))[0];
+  if (Math.abs(axis.d) < 4) throw new Error('Up/down aim barely moved — tip it more and retry.');
+  const pitchKey = axis.key;
+  return {
+    pitchKey,
+    kx: (CAL_TARGETS[2].x - CAL_TARGETS[1].x) / dYaw,
+    ky: (CAL_TARGETS[4].y - CAL_TARGETS[3].y) / axis.d,
+    yaw0: mean([c.yaw, t.yaw, b.yaw]),
+    pitch0: mean([c.pitch[pitchKey], l.pitch[pitchKey], r.pitch[pitchKey]]),
+    spanDeg: Math.round(Math.abs(dYaw) / 2),
+  };
+}
+
+function handleCalibrationReading(reading) {
+  if (calRun.triggerCount === null) calRun.triggerCount = reading.triggerCount;
+  if (reading.triggerCount === calRun.triggerCount) return;
+  calRun.triggerCount = reading.triggerCount;
+  calRun.samples.push(reading.pressPitch
+    ? { yaw: reading.pressYaw, pitch: { ...reading.pressPitch } }
+    : { yaw: reading.rawYaw, pitch: { ...reading.rawPitch } });
+  calTarget.classList.add('hit');
+  calRun.step += 1;
+  if (calRun.step < CAL_TARGETS.length) {
+    setTimeout(() => { if (calRun) showCalStep(); }, 250);
+    return;
+  }
+  try {
+    wandCal = solveCalibration(calRun.samples);
+    try { localStorage.setItem(CAL_KEY, JSON.stringify(wandCal)); } catch {}
+    endCalibration(`Calibrated ✓ (front axis ${wandCal.pitchKey}, ~${wandCal.spanDeg}° to edge). Press B anytime to recenter.`);
+  } catch (error) {
+    endCalibration(error.message);
+  }
+}
+
+function mapReading(reading) {
+  if (!wandCal || reading.rawYaw === undefined) return { x: reading.x, y: reading.y };
+  const counts = reading.recenterCount;
+  if (lastCounts !== null && counts !== lastCounts) {
+    // B pressed: wherever the wand points now becomes screen center.
+    wandCal.yaw0 = reading.rawYaw;
+    wandCal.pitch0 = reading.rawPitch[wandCal.pitchKey];
+  }
+  lastCounts = counts;
+  const clamp = v => Math.min(1, Math.max(0, v));
+  const x = clamp(0.5 + (reading.rawYaw - wandCal.yaw0) * wandCal.kx);
+  const y = clamp(0.5 + (reading.rawPitch[wandCal.pitchKey] - wandCal.pitch0) * wandCal.ky);
+  // Filter in "pixels" (×1000) so beta has a sensible scale.
+  const now = reading.timestamp;
+  return { x: filterX(x * 1000, now) / 1000, y: filterY(y * 1000, now) / 1000 };
+}
 
 let stream;
 let audioContext;
@@ -53,8 +174,16 @@ async function refreshPointer() {
     if (!reading.connected || !Number.isFinite(age) || age > 0.5) {
       throw new Error('Pointer data is stale');
     }
-    pointerReticle.style.left = `${reading.x * 100}%`;
-    pointerReticle.style.top = `${reading.y * 100}%`;
+    if (calRun) {
+      if (reading.triggerCount === undefined) throw new Error('Bridge too old for calibration');
+      handleCalibrationReading(reading);
+      pointerReticle.classList.add('waiting');
+      pointerStatus.textContent = 'CALIBRATING';
+      return;
+    }
+    const point = mapReading(reading);
+    pointerReticle.style.left = `${point.x * 100}%`;
+    pointerReticle.style.top = `${point.y * 100}%`;
     pointerReticle.classList.remove('waiting');
     pointerReticle.classList.toggle('trigger', Boolean(reading.trigger));
     pointerStatus.textContent = reading.transport === 'simulation' ? 'POINTER SIM' : 'STICKS3 / USB';
@@ -190,9 +319,14 @@ muteButton.addEventListener('click', () => {
 });
 cameraSelect.addEventListener('change', event => start(event.target.value));
 window.addEventListener('beforeunload', stop);
+calibrateButton.addEventListener('click', () => startCalibration());
+window.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && calRun) endCalibration('Calibration cancelled.');
+  if (event.key === 'c' && !calRun && !event.target.closest?.('input, select, textarea')) startCalibration();
+});
 
 setLive(false);
 refreshHeartRate();
 setInterval(refreshHeartRate, 1000);
 refreshPointer();
-setInterval(refreshPointer, 50);
+setInterval(refreshPointer, 30);

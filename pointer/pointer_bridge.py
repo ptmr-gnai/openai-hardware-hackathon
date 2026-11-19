@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import glob
 import json
 import math
@@ -76,6 +77,162 @@ class PointerMapper:
         }
 
 
+AXES = {"x": 0, "y": 1, "z": 2}
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a, b):
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _norm(v):
+    length = math.sqrt(_dot(v, v)) or 1.0
+    return (v[0] / length, v[1] / length, v[2] / length)
+
+
+class GyroPointerMapper:
+    """Air-mouse mapping: yaw around gravity -> x, pitch of the forward axis -> y.
+
+    Gyro bias is learned automatically whenever the stick is held still, so
+    drift stays low. Button B snaps the reticle back to the center.
+    """
+
+    def __init__(self, args: argparse.Namespace) -> None:
+        self.span = args.span  # degrees of rotation from center to screen edge
+        self.smoothing = args.smoothing
+        self.forward_index = AXES[args.forward_axis.lstrip("-")]
+        self.forward_sign = -1.0 if args.forward_axis.startswith("-") else 1.0
+        self.sign_x = -1.0 if args.invert_x else 1.0
+        self.sign_y = -1.0 if args.invert_y else 1.0
+        self.bias = (0.0, 0.0, 0.0)
+        self.still_samples = 0
+        self.gravity = (0.0, 0.0, 1.0)
+        self.last_ms = None
+        self.yaw = 0.0
+        self.pitch = 0.0
+        self.x = 0.5
+        self.y = 0.5
+        # Unclamped, never-reset angles for the browser-side calibration.
+        self.raw_yaw = 0.0
+        self.raw_pitch = {"x": 0.0, "y": 0.0, "z": 0.0}
+        self.trigger_count = 0
+        self.recenter_count = 0
+        self.last_trigger = False
+        self.pitch_ready = False
+        self.history = collections.deque(maxlen=30)  # ~0.6 s of (ms, yaw, pitch)
+        self.press_yaw = 0.0
+        self.press_pitch = dict(self.raw_pitch)
+
+    def _update_bias(self, gyro, accel_mag) -> bool:
+        # "Still" = raw rate is tiny and only gravity is acting. Judge on the raw
+        # rate (not rate minus bias) so a bad bias can never lock itself in.
+        rate = math.sqrt(sum(g * g for g in gyro))
+        still = rate < 3.0 and abs(accel_mag - 1.0) < 0.05
+        self.still_samples = self.still_samples + 1 if still else 0
+        if self.still_samples > 25:  # ~0.5 s at 50 Hz
+            self.bias = tuple(b + (g - b) * 0.02 for g, b in zip(gyro, self.bias))
+        return self.still_samples > 25
+
+    def map(self, reading: dict) -> dict:
+        accel = (float(reading["ax"]), float(reading["ay"]), float(reading["az"]))
+        gyro = (float(reading["gx"]), float(reading["gy"]), float(reading["gz"]))
+        ms = int(reading["ms"])
+        dt = 0.02 if self.last_ms is None else max(0.0, min(0.1, (ms - self.last_ms) / 1000))
+        self.last_ms = ms
+        recentered = bool(reading.get("recenter"))
+
+        accel_mag = math.sqrt(_dot(accel, accel))
+        still = self._update_bias(gyro, accel_mag)
+        # Low-pass gravity (accelerometer reads +1 g "up" in the sensor frame).
+        g_new = _norm(accel)
+        self.gravity = _norm(tuple(o + (n - o) * 0.1 for o, n in zip(self.gravity, g_new)))
+        up = self.gravity
+
+        omega = tuple(g - b for g, b in zip(gyro, self.bias))
+        if math.sqrt(_dot(omega, omega)) < 0.6:  # dead zone, deg/s
+            omega = (0.0, 0.0, 0.0)
+
+        forward = [0.0, 0.0, 0.0]
+        forward[self.forward_index] = self.forward_sign
+        # Project forward onto the horizontal plane to get a stable pitch axis.
+        f_h = tuple(f - _dot(forward, up) * u for f, u in zip(forward, up))
+        pitch_axis = _norm(_cross(up, f_h))
+
+        yaw_rate = _dot(omega, up)  # + = counter-clockwise seen from above = left
+        pitch_rate = _dot(omega, pitch_axis)
+
+        self.raw_yaw += yaw_rate * dt
+        # Absolute pitch (elevation above the horizon, degrees) as it would be if
+        # each device axis were the "front" of the wand. Complementary filter:
+        # gyro for fast response, accelerometer (gravity) to remove drift.
+        # Calibration picks whichever axis actually responded to up/down aiming.
+        motion_trust = 0.02 if abs(accel_mag - 1.0) < 0.15 else 0.0
+        for name, index in AXES.items():
+            axis = [0.0, 0.0, 0.0]
+            axis[index] = 1.0
+            elevation = math.degrees(math.asin(max(-1.0, min(1.0, _dot(axis, g_new)))))
+            if not self.pitch_ready:
+                self.raw_pitch[name] = elevation
+                continue
+            a_h = tuple(f - _dot(axis, up) * u for f, u in zip(axis, up))
+            rate = -_dot(omega, _norm(_cross(up, a_h))) if _dot(a_h, a_h) > 0.05 else 0.0
+            predicted = self.raw_pitch[name] + rate * dt
+            self.raw_pitch[name] = predicted + (elevation - predicted) * motion_trust
+        self.pitch_ready = True
+
+        # Pressing A jolts the stick, so report where it pointed just before.
+        self.history.append((ms, self.raw_yaw, dict(self.raw_pitch)))
+        trigger = bool(reading.get("trigger"))
+        if trigger and not self.last_trigger:
+            self.trigger_count += 1
+            before = [h for h in self.history if h[0] <= ms - 120]
+            _, self.press_yaw, self.press_pitch = before[-1] if before else self.history[0]
+        self.last_trigger = trigger
+        if recentered:
+            self.recenter_count += 1
+
+        if recentered:
+            self.yaw = self.pitch = 0.0
+        else:
+            self.yaw = max(-self.span, min(self.span, self.yaw + yaw_rate * dt))
+            self.pitch = max(-self.span, min(self.span, self.pitch + pitch_rate * dt))
+
+        target_x = 0.5 - self.sign_x * self.yaw / (2 * self.span)
+        target_y = 0.5 - self.sign_y * self.pitch / (2 * self.span)
+        if recentered:
+            self.x, self.y = target_x, target_y
+        self.x += (target_x - self.x) * self.smoothing
+        self.y += (target_y - self.y) * self.smoothing
+
+        return {
+            "connected": True,
+            "timestamp": time.time(),
+            "x": round(self.x, 5),
+            "y": round(self.y, 5),
+            "trigger": bool(reading.get("trigger")),
+            "recentered": recentered,
+            "yaw": round(self.yaw, 2),
+            "pitch": round(self.pitch, 2),
+            "still": still,
+            "bias": [round(b, 3) for b in self.bias],
+            "rawYaw": round(self.raw_yaw, 3),
+            "rawPitch": {k: round(v, 3) for k, v in self.raw_pitch.items()},
+            "triggerCount": self.trigger_count,
+            "pressYaw": round(self.press_yaw, 3),
+            "pressPitch": {k: round(v, 3) for k, v in self.press_pitch.items()},
+            "recenterCount": self.recenter_count,
+            "mode": "gyro",
+            "transport": "usb",
+        }
+
+
 def run_simulation(output: Path, stop: list[bool]) -> None:
     started = time.monotonic()
     while not stop[0]:
@@ -108,7 +265,10 @@ def run_serial(args: argparse.Namespace, output: Path, stop: list[bool]) -> None
         raise SystemExit("No StickS3 serial port found. Connect it with a USB-C data cable.")
 
     print(f"Reading StickS3 from {port} at {args.baud} baud")
-    mapper = PointerMapper(args.sensitivity, args.smoothing)
+    if args.mode == "gyro":
+        mapper = GyroPointerMapper(args)
+    else:
+        mapper = PointerMapper(args.sensitivity, args.smoothing)
     try:
         with serial.Serial(port, args.baud, timeout=1) as connection:
             while not stop[0]:
@@ -132,7 +292,14 @@ def main() -> int:
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--output", type=Path, default=Path("livestream/pointer.json"))
     parser.add_argument("--sensitivity", type=float, default=35.0)
-    parser.add_argument("--smoothing", type=float, default=0.28)
+    parser.add_argument("--smoothing", type=float, default=0.35)
+    parser.add_argument("--mode", choices=("gyro", "tilt"), default="gyro")
+    parser.add_argument("--span", type=float, default=25.0,
+                        help="gyro mode: degrees of turn from center to screen edge")
+    parser.add_argument("--forward-axis", default="y",
+                        help="gyro mode: device axis that points at the screen (x, y, z, -x, -y, -z)")
+    parser.add_argument("--invert-x", action="store_true")
+    parser.add_argument("--invert-y", action="store_true")
     parser.add_argument("--simulate", action="store_true")
     args = parser.parse_args()
 

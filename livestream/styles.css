@@ -201,6 +201,40 @@ button.primary { background: #36ed8d; border-color: #36ed8d; color: #031008; fon
   z-index: 3;
 }
 
+.cal-target {
+  height: 44px;
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  z-index: 5;
+}
+.cal-target span {
+  animation: cal-pulse 1s ease-in-out infinite;
+  background: #ff5d8f;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 6px #ff5d8f55, 0 0 24px #ff5d8f;
+  inset: 8px;
+  position: absolute;
+}
+.cal-target.hit span { background: #36ed8d; box-shadow: 0 0 30px #36ed8d; }
+@keyframes cal-pulse { 50% { transform: scale(1.25); } }
+.cal-prompt {
+  background: #07100cf0;
+  border: 1px solid #ff5d8f;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  left: 50%;
+  padding: 10px 14px;
+  position: absolute;
+  text-align: center;
+  top: 16px;
+  transform: translateX(-50%);
+  z-index: 6;
+}
+
 .pointer-status.connected { border-color: #ffdc5d; color: #ffdc5d; }
 
 .telemetry span {
@@ -215,7 +249,7 @@ button.primary { background: #36ed8d; border-color: #36ed8d; color: #031008; fon
 .controls {
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(220px, 1fr) auto auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto auto auto auto;
   margin-top: 12px;
 }
 
@@ -243,7 +277,7 @@ select { flex: 1; }
 @media (max-width: 680px) {
   main { width: min(100% - 20px, 1040px); padding-top: 20px; }
   header { align-items: flex-start; flex-direction: column; }
-  .controls { grid-template-columns: 1fr 1fr 1fr; }
+  .controls { grid-template-columns: 1fr 1fr; }
   .controls label { grid-column: 1 / -1; }
   .audio-panel { grid-template-columns: 1fr; }
   .heart-rate { right: 10px; top: 10px; }

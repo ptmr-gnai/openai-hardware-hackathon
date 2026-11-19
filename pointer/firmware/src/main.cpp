@@ -5,6 +5,7 @@
 namespace {
 constexpr uint32_t kSampleIntervalMs = 20;  // 50 Hz
 uint32_t lastSampleMs = 0;
+uint32_t lastDiagnosticMs = 0;
 bool imuReady = false;
 
 void drawStatus() {
@@ -31,13 +32,25 @@ void setup() {
   Serial.begin(115200);
   delay(300);
 
-  imuReady = M5.Imu.begin();
+  // M5.begin() performs board detection and initializes the built-in IMU.
+  // Calling M5.Imu.begin() a second time can reset the already-active device.
+  imuReady = M5.Imu.getType() != m5::imu_t::imu_none;
   drawStatus();
-  Serial.println("{\"type\":\"ready\",\"device\":\"StickS3\",\"rateHz\":50}");
+  Serial.printf(
+      "{\"type\":\"ready\",\"device\":\"StickS3\",\"board\":%d,"
+      "\"imuReady\":%s,\"imuType\":%d,\"rateHz\":50}\n",
+      static_cast<int>(M5.getBoard()), imuReady ? "true" : "false",
+      static_cast<int>(M5.Imu.getType()));
 }
 
 void loop() {
   M5.update();
+  if (millis() - lastDiagnosticMs >= 1000) {
+    lastDiagnosticMs = millis();
+    Serial.printf("{\"type\":\"status\",\"imuReady\":%s,\"ms\":%lu}\n",
+                  imuReady ? "true" : "false",
+                  static_cast<unsigned long>(millis()));
+  }
   if (!imuReady || millis() - lastSampleMs < kSampleIntervalMs) {
     delay(1);
     return;
@@ -61,4 +74,3 @@ void loop() {
       M5.BtnA.isPressed() ? "true" : "false",
       M5.BtnB.wasPressed() ? "true" : "false");
 }
-
