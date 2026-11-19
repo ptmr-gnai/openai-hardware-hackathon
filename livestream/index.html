@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Hardware Hack — Live Camera</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">HARDWARE–HACK / LOCAL SENSOR</p>
+          <h1>FaceTime HD Camera</h1>
+        </div>
+        <div id="liveBadge" class="badge idle"><span></span><strong>OFFLINE</strong></div>
+      </header>
+
+      <section class="stage" aria-label="Camera preview">
+        <video id="video" autoplay muted playsinline></video>
+        <div id="emptyState" class="empty-state">
+          <p>Camera is standing by.</p>
+          <button id="startButton" class="primary">Start livestream</button>
+        </div>
+        <div class="scanlines" aria-hidden="true"></div>
+        <div class="telemetry">
+          <span id="resolution">— × —</span>
+          <span id="fps">— FPS</span>
+          <span>LOCAL</span>
+        </div>
+      </section>
+
+      <section class="controls" aria-label="Livestream controls">
+        <label>
+          <span>Camera</span>
+          <select id="cameraSelect" disabled><option>Built-in camera</option></select>
+        </label>
+        <button id="mirrorButton" disabled>Mirror: on</button>
+        <button id="muteButton" disabled>Mic: on</button>
+        <button id="stopButton" disabled>Stop</button>
+      </section>
+
+      <section class="audio-panel">
+        <div class="audio-label">
+          <span>MIC INPUT</span>
+          <strong id="micState">STANDBY</strong>
+        </div>
+        <canvas id="meter" width="720" height="32" aria-label="Microphone level"></canvas>
+      </section>
+
+      <p id="status" class="status" role="status">Ready. Media remains inside this browser tab.</p>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
