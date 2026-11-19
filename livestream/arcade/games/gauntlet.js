@@ -12,6 +12,7 @@ export default {
   blurb: `Duck & dodge with your body, pop balloons with the wand. ${DURATION} s.`,
   duration: DURATION,
   needs: ['body'],
+  themed: true,
 
   init(ctx) {
     return { dodge: dodgeLayer.init(ctx), pop: balloonLayer.init(ctx) };

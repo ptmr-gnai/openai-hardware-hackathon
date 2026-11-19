@@ -4,6 +4,7 @@
 //   theme.motion  rise | fall | fly | scurry
 //   theme.scene   background (see lib/scenes.js)
 import { drawScene } from '../../lib/scenes.js';
+import { spriteImage } from '../../lib/sprites.js';
 
 const COLORS = ['#ff4d6d', '#ff9f1c', '#3a86ff', '#8338ec', '#06d6a0', '#fb5607', '#f72585'];
 const GOLD = '#ffd60a';
@@ -77,43 +78,6 @@ function spawn(state, ctx) {
   MOTIONS[motion].spawn(b, ctx, ctx.progress());
   if (gold) { b.vy = (b.vy ?? 0) * 1.4; b.vx = (b.vx ?? 0) * 1.4; b.speed = (b.speed ?? 0) * 1.3; }
   state.balloons.push(b);
-}
-
-// Sprite cache: emoji + filters/glow are rendered ONCE per (sprite, look, size)
-// into an offscreen canvas, then stamped with drawImage each frame. Running
-// canvas filters / shadowBlur per target per frame is what made rounds lag.
-const spriteCache = new Map();
-function spriteImage(sprite, r, look) {
-  const size = Math.max(8, Math.round((r * 2.3) / 4) * 4); // 4px buckets
-  const dpr = devicePixelRatio || 1;
-  const key = `${sprite}|${look}|${size}|${dpr}`;
-  let img = spriteCache.get(key);
-  if (img) return img;
-  const pad = look === 'plain' ? 4 : 36; // room for glow / outline
-  const css = Math.ceil(size * 1.3 + pad * 2);
-  img = document.createElement('canvas');
-  img.width = img.height = Math.ceil(css * dpr);
-  img.css = css;
-  const g = img.getContext('2d');
-  g.scale(dpr, dpr);
-  g.font = `${size}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  if (look === 'gold' || look === 'goldRunner') {
-    g.shadowColor = GOLD;
-    g.shadowBlur = 30;
-    g.fillText(sprite, css / 2, css / 2);
-    g.shadowBlur = 0;
-  }
-  // Ground runners (gray rat emoji) read faint: darken to a brown "NYC rat"
-  // (or tint gold), boost contrast and add a crisp dark outline.
-  const outline = 'drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1.5px #000)';
-  if (look === 'runner') g.filter = `sepia(0.7) saturate(1.8) brightness(0.62) contrast(1.35) ${outline}`;
-  if (look === 'goldRunner') g.filter = `sepia(1) saturate(4) brightness(1.05) ${outline}`;
-  g.fillText(sprite, css / 2, css / 2);
-  if (spriteCache.size > 300) spriteCache.clear();
-  spriteCache.set(key, img);
-  return img;
 }
 
 function drawSprite(g, b, sprite) {
@@ -230,6 +194,7 @@ export default {
   title: 'Balloon Pop',
   blurb: `Pop as many as you can in ${DURATION} seconds. Gold = 3 points. Say a theme to change them!`,
   duration: DURATION,
+  themed: true,
   init: balloonLayer.init,
   update: balloonLayer.update,
   shoot: balloonLayer.shoot,

@@ -2,5 +2,6 @@
 import balloons from './balloons.js';
 import duck from './duck.js';
 import gauntlet from './gauntlet.js';
+import scratch from './scratch.js';
 
-export const games = [balloons, duck, gauntlet];
+export const games = [balloons, duck, gauntlet, scratch];

@@ -48,6 +48,13 @@ export const sfx = {
   bonus: () => [0, 0.07, 0.14].forEach((delay, i) => tone({ freq: 660 * (1 + i * 0.26), dur: 0.1, delay, gain: 0.1 })),
   whoosh: () => { noise({ dur: 0.18, gain: 0.12 }); tone({ freq: 300, to: 900, dur: 0.18, gain: 0.06 }); },
   hit: () => tone({ freq: 180, to: 50, dur: 0.3, type: 'sawtooth', gain: 0.2 }),
+  scratch: () => noise({ dur: 0.05, gain: 0.07 }),
+  reveal: () => tone({ freq: 660, to: 990, dur: 0.08, type: 'triangle', gain: 0.08 }),
+  win: () => [0, 0.08, 0.16, 0.24].forEach((delay, i) => tone({ freq: 523 * (1 + i * 0.25), dur: 0.14, delay, type: 'square', gain: 0.06 })),
+  jackpot: () => {
+    [0, 0.1, 0.2, 0.3, 0.45, 0.6].forEach((delay, i) => tone({ freq: [523, 659, 784, 1047, 784, 1047][i], dur: 0.22, delay, type: 'square', gain: 0.08 }));
+    noise({ dur: 0.3, gain: 0.15 });
+  },
   tick: () => tone({ freq: 520, dur: 0.1, type: 'triangle' }),
   go: () => tone({ freq: 880, dur: 0.25, type: 'triangle' }),
   end: () => [0, 0.12, 0.24].forEach((delay, i) => tone({ freq: 660 / (1 + i * 0.2), dur: 0.18, delay, type: 'triangle' })),

@@ -96,7 +96,7 @@ Games are built from shared parts in `livestream/lib/`:
 
 | Part | Role |
 |---|---|
-| `wand.js` | Bridge → calibrated pointer, `shoot` (A) / `recenter` (B) events, mouse fallback |
+| `wand.js` | Bridge → calibrated pointer, `shoot` (A) / `recenter` (B) events, `speed`/`shake`/`held`, mouse fallback |
 | `calibrate.js` | 5-target calibration overlay |
 | `engine.js` | Canvas, intro → countdown → play → results lifecycle, HUD, reticle, best scores |
 | `fx.js` | Particle bursts and floating score text |
@@ -105,6 +105,7 @@ Games are built from shared parts in `livestream/lib/`:
 | `voice.js` | Always-on speech → `command` events (Web Speech API), auto-restart, `M` mutes |
 | `theme.js` | Current theme (sprite, motion, scene, colors) + `resolveTheme(text)` |
 | `scenes.js` | Procedural backgrounds: sky, NYC skyline, subway, pond |
+| `sprites.js` | Shared emoji sprite cache (rendered once, stamped per frame) |
 | `body.js` | Webcam pose tracking (MediaPipe, local): `duck`, `duckAmount`, `side`, `sideAmount`, `lean`, `hands`, camera preview |
 
 Camera games need the pose model once (downloads into git-ignored `livestream/vendor/`):
@@ -117,6 +118,11 @@ Camera games need the pose model once (downloads into git-ignored `livestream/ve
 way; return to center between obstacles. `R` recalibrates standing position,
 `Space`/`↓` ducks and `←`/`→` dodge from the keyboard, `[` / `]` adjust speed
 (default 85%, or `?speed=0.7`).
+
+**Bodega Bucks** (20 s) — scratch-off tickets at the corner bodega: point at the
+ticket and shake the wand left-right to scratch (or hold A). Match 3 symbols to win;
+about 1 in 14 tickets is a 💎💎💎 $1,000,000 jackpot. `J` rigs a jackpot for demos.
+(Fictional game, not a real lottery's branding.)
 
 **Gauntlet** (15 s) — Bob & Weave and Balloon Pop at once: dodge with your body,
 pop balloons with the wand.

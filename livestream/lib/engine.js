@@ -7,7 +7,9 @@
 //     draw(state, ctx),                    // state may be null on the intro screen
 //     shoot(state, ctx, x, y) -> boolean,  // optional; pixel coords; return true on a hit
 //     needs: ['body'],                     // optional; parts the game uses (ctx.body)
-//     summary(state, run) -> string }      // optional; results-screen stat line
+//     summary(state, run) -> string,       // optional; results-screen stat line
+//     formatScore(score) -> string,        // optional; e.g. dollars
+//     themed: true }                       // optional; listen for voice themes
 //
 // Lifecycle: intro --shoot--> countdown (3 s) --> play (duration) --> results --shoot--> countdown ...
 import { createFx } from './fx.js';
@@ -76,6 +78,7 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
   addEventListener('resize', resize);
 
   const fx = createFx();
+  const fmt = score => (game.formatScore ? game.formatScore(score) : `${score}`);
   const run = { phase: 'intro', phaseT: 0, score: 0, shots: 0, hits: 0, best: loadBest(game.id), newBest: false };
   const ctx = {
     g, fx, sfx, run, body, wand, voice,
@@ -159,7 +162,7 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
     const s = Math.min(W, H);
     if (run.phase === 'play' || run.phase === 'countdown') {
       const left = run.phase === 'play' ? Math.max(0, game.duration - run.phaseT) : game.duration;
-      label(g, `${run.score}`, 32, 44, { size: 44, align: 'left' });
+      label(g, fmt(run.score), 32, 44, { size: 44, align: 'left' });
       label(g, `${left.toFixed(1)}s`, W - 32, 44, { size: 36, align: 'right', color: left < 4 ? '#ff5d8f' : '#fff' });
       g.fillStyle = '#0005';
       g.fillRect(0, 0, W, 6);
@@ -175,15 +178,15 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
       label(g, game.title, W / 2, H * 0.36, { size: s * 0.11 });
       label(g, game.blurb, W / 2, H * 0.36 + s * 0.11, { size: s * 0.035, weight: 600 });
       label(g, game.needs?.includes('body') ? 'Press A, click or Enter to start' : 'Press A (or click) to start', W / 2, H * 0.62, { size: s * 0.045, color: '#ffdc5d' });
-      if (run.best) label(g, `Best: ${run.best}`, W / 2, H * 0.62 + s * 0.08, { size: s * 0.035, weight: 600 });
+      if (run.best) label(g, `Best: ${fmt(run.best)}`, W / 2, H * 0.62 + s * 0.08, { size: s * 0.035, weight: 600 });
     }
     if (run.phase === 'results') {
       const accuracy = run.shots ? Math.round((run.hits / run.shots) * 100) : 0;
       g.fillStyle = '#0006';
       g.fillRect(0, 0, W, H);
       label(g, "Time's up!", W / 2, H * 0.3, { size: s * 0.08 });
-      label(g, `${run.score}`, W / 2, H * 0.45, { size: s * 0.18, color: '#ffdc5d' });
-      label(g, run.newBest ? 'NEW BEST!' : `Best: ${run.best}`, W / 2, H * 0.58, { size: s * 0.045, color: run.newBest ? '#06d6a0' : '#fff' });
+      label(g, fmt(run.score), W / 2, H * 0.45, { size: s * (fmt(run.score).length > 6 ? 0.11 : 0.18), color: '#ffdc5d' });
+      label(g, run.newBest ? 'NEW BEST!' : `Best: ${fmt(run.best)}`, W / 2, H * 0.58, { size: s * 0.045, color: run.newBest ? '#06d6a0' : '#fff' });
       const stats = game.summary ? game.summary(state, run) : `${run.hits}/${run.shots} shots · ${accuracy}% accuracy`;
       label(g, stats, W / 2, H * 0.65, { size: s * 0.032, weight: 600 });
       if (run.phaseT > 1.2) label(g, 'Press A to play again · Esc for menu', W / 2, H * 0.76, { size: s * 0.035, color: '#ffdc5d' });

@@ -51,7 +51,27 @@ export function createWand({ url = '/pointer.json', surface = 'arcade', pollMs =
   let cal = load(key) ?? load(LEGACY_KEY);
   const ownCalibration = () => Boolean(load(key));
   const listeners = {};
-  const state = { connected: false, x: 0.5, y: 0.5, source: 'none', calibrated: ownCalibration(), session: null };
+  // speed: reticle speed in screens/second; shake: smoothed 0..1 "how hard are
+  // you shaking it"; held: A (or mouse button) currently held.
+  const state = {
+    connected: false, x: 0.5, y: 0.5, source: 'none', calibrated: ownCalibration(), session: null,
+    speed: 0, shake: 0, held: false,
+  };
+  let motionT = null;
+  let motionX = 0.5;
+  let motionY = 0.5;
+  function trackMotion(time) {
+    if (motionT !== null && time > motionT) {
+      const dt = time - motionT;
+      state.speed = Math.hypot(state.x - motionX, state.y - motionY) / dt;
+      const target = Math.min(1, state.speed / 2.5);
+      // Fast attack, slower release, so a shake reads as continuous.
+      state.shake += (target - state.shake) * (target > state.shake ? 0.5 : 0.12);
+    }
+    motionT = time;
+    motionX = state.x;
+    motionY = state.y;
+  }
   const filterX = oneEuro();
   const filterY = oneEuro();
   let lastTrigger = null;
@@ -113,7 +133,9 @@ export function createWand({ url = '/pointer.json', surface = 'arcade', pollMs =
       state.x = filterX(target.x * 1000, reading.timestamp) / 1000;
       state.y = filterY(target.y * 1000, reading.timestamp) / 1000;
       state.source = 'wand';
+      trackMotion(reading.timestamp);
     }
+    if (state.source === 'wand') state.held = Boolean(reading.trigger);
 
     // Rising edge of A. Old bridges/simulator only send the boolean.
     const count = reading.triggerCount ?? (reading.trigger ? 1 : 0);
@@ -174,10 +196,13 @@ export function createWand({ url = '/pointer.json', surface = 'arcade', pollMs =
         state.x = clamp01((event.clientX - rect.left) / rect.width);
         state.y = clamp01((event.clientY - rect.top) / rect.height);
         state.source = 'mouse';
+        trackMotion(performance.now() / 1000);
       });
+      element.addEventListener('mouseup', () => { state.held = false; });
       element.addEventListener('mousedown', event => {
         if (event.button !== 0 || capture) return;
         lastMouseMs = performance.now();
+        state.held = true;
         emit('shoot', { x: state.x, y: state.y, source: 'mouse' });
       });
     },

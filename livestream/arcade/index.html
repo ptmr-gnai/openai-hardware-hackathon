@@ -50,11 +50,12 @@
         wand.attachMouse(canvas);
         const body = game.needs?.includes('body') ? createBody() : null;
         body?.start().catch(error => console.warn('Body tracking unavailable:', error));
-        const voice = createVoice();
+        // Voice themes only where targets are themeable (avoids room-chatter toasts elsewhere).
+        const voice = game.themed ? createVoice() : null;
         const engine = runMinigame(game, { canvas, wand, body, voice, onExit: toMenu });
         // Say a theme ("teddy bears") → the targets change, mid-round included.
         // Always listening, so phrases with no theme in them are ignored quietly.
-        voice.on('command', async text => {
+        voice?.on('command', async text => {
           const next = await resolveTheme(text);
           if (!next) return;
           theme.set(next);

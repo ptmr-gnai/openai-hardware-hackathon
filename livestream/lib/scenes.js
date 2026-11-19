@@ -137,6 +137,79 @@ function paintSubway(g, W, H, sky) {
   for (let x = 0; x < W; x += 60) g.fillRect(x, H * 0.74, 2, H * 0.26);
 }
 
+// Bodega: back shelves stocked with colourful products, neon signs, wooden counter.
+function paintBodega(g, W, H, sky) {
+  gradient(g, W, H, sky);
+  const r = rand(11);
+  const shelfTop = H * 0.08;
+  const shelfBottom = H * 0.66;
+  const rows = 4;
+  const rowH = (shelfBottom - shelfTop) / rows;
+  const palette = ['#e63946', '#ffd60a', '#06d6a0', '#118ab2', '#f77f00', '#ef476f', '#8338ec', '#ffffff', '#2a9d8f', '#e9c46a'];
+  for (let row = 0; row < rows; row++) {
+    const base = shelfTop + (row + 1) * rowH;
+    let x = 10;
+    while (x < W - 10) {
+      const kind = r();
+      const w = kind < 0.4 ? 18 + r() * 10 : 26 + r() * 30;     // cans vs boxes
+      const h = kind < 0.4 ? rowH * (0.35 + r() * 0.15) : rowH * (0.5 + r() * 0.35);
+      const color = palette[Math.floor(r() * palette.length)];
+      g.fillStyle = color;
+      if (kind < 0.4) {
+        g.beginPath();
+        g.roundRect(x, base - h - 6, w, h, 4);
+        g.fill();
+        g.fillStyle = '#ffffff55';
+        g.fillRect(x + 2, base - h, w - 4, h * 0.25);
+      } else {
+        g.fillRect(x, base - h - 6, w, h);
+        g.fillStyle = '#00000033';
+        g.fillRect(x + w * 0.15, base - h * 0.7, w * 0.7, h * 0.25);
+      }
+      x += w + 3 + r() * 5;
+    }
+    // shelf plank
+    g.fillStyle = '#d9d2c3';
+    g.fillRect(0, base - 6, W, 8);
+    g.fillStyle = '#00000040';
+    g.fillRect(0, base + 2, W, 4);
+  }
+  // neon signs
+  const neon = (text, x, y, size, color) => {
+    g.font = `800 ${size}px "Arial Rounded MT Bold", system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.shadowColor = color;
+    g.shadowBlur = 24;
+    g.fillStyle = color;
+    g.fillText(text, x, y);
+    g.shadowBlur = 8;
+    g.fillStyle = '#ffffff';
+    g.fillText(text, x, y);
+    g.shadowBlur = 0;
+  };
+  g.fillStyle = '#000000aa';
+  g.fillRect(W * 0.04, H * 0.02, W * 0.22, H * 0.09);
+  neon('OPEN 24 HRS', W * 0.15, H * 0.065, H * 0.042, '#ff3864');
+  g.fillStyle = '#000000aa';
+  g.fillRect(W * 0.76, H * 0.02, W * 0.2, H * 0.09);
+  neon('LOTTO', W * 0.86, H * 0.065, H * 0.05, '#2de2e6');
+  // counter
+  const top = H * 0.7;
+  g.fillStyle = '#8b5a2b';
+  g.fillRect(0, top, W, H - top);
+  g.fillStyle = '#a47148';
+  g.fillRect(0, top, W, H * 0.025);
+  g.strokeStyle = '#00000030';
+  g.lineWidth = 2;
+  for (let x = 0; x < W; x += 90) { g.beginPath(); g.moveTo(x, top + H * 0.03); g.lineTo(x, H); g.stroke(); }
+  // bodega cat on the counter
+  g.font = `${H * 0.12}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'bottom';
+  g.fillText('🐈', W * 0.1, top + H * 0.02);
+}
+
 const SCENES = {
   sky(g, W, H, t, sky) {
     gradient(g, W, H, sky);
@@ -149,6 +222,10 @@ const SCENES = {
 
   subway(g, W, H, t, sky) {
     g.drawImage(cachedStatic('subway', W, H, sky, paintSubway), 0, 0, W, H);
+  },
+
+  bodega(g, W, H, t, sky) {
+    g.drawImage(cachedStatic('bodega', W, H, sky, paintBodega), 0, 0, W, H);
   },
 
   pond(g, W, H, t, sky) {
