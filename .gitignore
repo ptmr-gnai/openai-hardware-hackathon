@@ -1,0 +1,30 @@
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Common build outputs
+build/
+dist/
+out/
+tmp/
+*.log
+
+# Hardware and EDA generated files
+*.bak
+*.bck
+*.kicad_prl
+*.kicad_sch-bak
+*.kicad_pcb-bak
+*-backups/
+
