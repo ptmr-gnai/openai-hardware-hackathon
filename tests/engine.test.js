@@ -1,0 +1,7 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {Round,parseHeartRate,parseWand} from '../src/engine.js';
+test('Polar packets support little-endian 8 and 16 bit values',()=>{assert.equal(parseHeartRate(new DataView(Uint8Array.of(0,82).buffer)),82);assert.equal(parseHeartRate(new DataView(Uint8Array.of(1,44,1).buffer)),300);assert.throws(()=>parseHeartRate(new DataView(Uint8Array.of(1,44).buffer)));});
+test('wand rejects malformed data and clamps screen coordinates',()=>{assert.deepEqual(parseWand('{"x":2,"y":-1,"duck":true}'),{x:1,y:0,duck:true});assert.throws(()=>parseWand('{"x":"NaN","y":0,"duck":false}'));});
+test('reach scores once, waves award only for ducking, round ends',()=>{const r=new Round(()=>.5);r.start();assert.deepEqual(r.tick(.1,[{x:r.target.x,y:r.target.y}]),['hit']);assert.equal(r.score,10);while(!r.wave)r.tick(.1);while(r.wave)r.tick(.1,[],true);assert.equal(r.dodges,1);assert.equal(r.score,35);while(r.active)r.tick(.1);assert.equal(r.elapsed,60);const score=r.score;r.tick(.1,[{x:.5,y:.5}],true);assert.equal(r.score,score);r.start();assert.equal(r.score,0);assert.equal(r.elapsed,0);});
+test('missing a wave breaks streak without subtracting points',()=>{const r=new Round(()=>.5);r.start();r.tick(.1,[r.target]);while(!r.wave)r.tick(.1);while(r.wave)r.tick(.1,[],false);assert.equal(r.dodges,0);assert.equal(r.score,10);assert.equal(r.streak,0);});

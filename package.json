@@ -1,0 +1,26 @@
+{
+  "name": "pulse-play",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "node tests/browser.js",
+    "postinstall": "node scripts/setup-assets.js",
+    "assets": "node scripts/setup-assets.js",
+    "test:devices": "node tests/devices.js"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.32",
+    "undici": "^7.30.2",
+    "vite": "^7.2.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
