@@ -94,7 +94,6 @@ Games are built from shared parts in `livestream/lib/`:
 | `fx.js` | Particle bursts and floating score text |
 | `sound.js` | Synthesized sound effects (no assets) |
 | `filters.js` | 1€ smoothing filter |
-
 | `body.js` | Webcam pose tracking (MediaPipe, local): `duck`, `duckAmount`, `lean`, `hands`, camera preview |
 
 Camera games need the pose model once (downloads into git-ignored `livestream/vendor/`):
