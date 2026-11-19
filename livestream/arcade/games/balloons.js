@@ -1,26 +1,115 @@
-// Balloon Pop: balloons float up and away; point and press A to pop them.
+// Balloon Pop: targets move across the screen; point and press A to pop them.
+// What the targets ARE and HOW they move comes from the current theme:
+//   theme.sprite  emoji (null = classic balloon)
+//   theme.motion  rise | fall | fly | scurry
+//   theme.scene   background (see lib/scenes.js)
+import { drawScene } from '../../lib/scenes.js';
+
 const COLORS = ['#ff4d6d', '#ff9f1c', '#3a86ff', '#8338ec', '#06d6a0', '#fb5607', '#f72585'];
 const GOLD = '#ffd60a';
 const DURATION = 15;
 
+// Movement styles. spawn() places a target, update() moves it, gone() culls it.
+const MOTIONS = {
+  // Float up from the bottom with a gentle sway (balloons).
+  rise: {
+    spawn(b, { W, H, rand }, p) {
+      Object.assign(b, { x0: rand(W * 0.08, W * 0.92), y: H + b.r * 1.6, vy: -H * rand(0.17, 0.27) * (1 + p * 0.6), sway: rand(10, 40) });
+    },
+    update(b, dt) { b.y += b.vy * dt; b.x = b.x0 + Math.sin(b.phase + b.t * b.swayF) * b.sway; },
+    gone(b) { return b.y < -b.r * 4; },
+  },
+  // Drop from the top, spinning (pizza slices).
+  fall: {
+    spawn(b, { W, H, rand }, p) {
+      Object.assign(b, { x0: rand(W * 0.08, W * 0.92), y: -b.r * 2, vy: H * rand(0.16, 0.26) * (1 + p * 0.6), sway: rand(5, 25), spin: rand(-2.5, 2.5) });
+    },
+    update(b, dt) { b.y += b.vy * dt; b.x = b.x0 + Math.sin(b.phase + b.t * b.swayF) * b.sway; b.angle = b.t * b.spin; },
+    gone(b, { H }) { return b.y > H + b.r * 3; },
+  },
+  // Fly across the sky in a flapping wave (ducks).
+  fly: {
+    spawn(b, { W, H, rand }, p) {
+      const fromLeft = Math.random() < 0.5;
+      Object.assign(b, {
+        x: fromLeft ? -b.r * 2 : W + b.r * 2, y0: H * rand(0.12, 0.55),
+        vx: (fromLeft ? 1 : -1) * W * rand(0.16, 0.26) * (1 + p * 0.5), bob: rand(H * 0.03, H * 0.08), swayF: rand(2, 3.5),
+      });
+    },
+    update(b, dt) { b.x += b.vx * dt; b.y = b.y0 + Math.sin(b.phase + b.t * b.swayF) * b.bob; b.flip = b.vx > 0; b.angle = Math.cos(b.phase + b.t * b.swayF) * 0.2; },
+    gone(b, { W }) { return b.x < -b.r * 4 || b.x > W + b.r * 4; },
+  },
+  // Dart along the ground, pausing now and then (rats).
+  scurry: {
+    spawn(b, { W, H, rand }, p) {
+      const fromLeft = Math.random() < 0.5;
+      Object.assign(b, {
+        x: fromLeft ? -b.r * 2 : W + b.r * 2, y: H * rand(0.8, 0.9),
+        dir: fromLeft ? 1 : -1, speed: W * rand(0.3, 0.45) * (1 + p * 0.4), r: b.r * 1.5,
+      });
+    },
+    update(b, dt) {
+      // Bursts of speed with short freezes: 0..1 envelope from a sine.
+      const gait = Math.max(0, Math.sin(b.phase + b.t * 2.6)) ** 0.4;
+      b.x += b.dir * b.speed * gait * dt;
+      b.flip = b.dir > 0;
+      b.angle = Math.sin(b.t * 30) * 0.06 * gait;
+    },
+    gone(b, { W }) { return b.x < -b.r * 4 || b.x > W + b.r * 4; },
+  },
+};
+
 function spawn(state, ctx) {
   const { W, H, rand } = ctx;
-  const p = ctx.progress();
+  const theme = ctx.theme ?? {};
+  const motion = MOTIONS[theme.motion] ? theme.motion : 'rise';
   const gold = Math.random() < 0.08;
-  const r = Math.min(W, H) * rand(0.045, 0.065) * (gold ? 0.8 : 1);
-  state.balloons.push({
-    x0: rand(W * 0.08, W * 0.92),
-    x: 0,
-    y: H + r * 1.6,
-    r,
-    vy: H * rand(0.17, 0.27) * (1 + p * 0.6) * (gold ? 1.5 : 1),
-    sway: rand(10, 40),
+  const b = {
+    motion,
+    r: Math.min(W, H) * rand(0.045, 0.065) * (gold ? 0.8 : 1),
+    x: 0, y: 0, x0: 0, angle: 0, flip: false,
     swayF: rand(0.8, 1.8),
     phase: rand(0, Math.PI * 2),
     color: gold ? GOLD : COLORS[Math.floor(Math.random() * COLORS.length)],
     gold,
     t: 0,
-  });
+  };
+  MOTIONS[motion].spawn(b, ctx, ctx.progress());
+  if (gold) { b.vy = (b.vy ?? 0) * 1.4; b.vx = (b.vx ?? 0) * 1.4; b.speed = (b.speed ?? 0) * 1.3; }
+  state.balloons.push(b);
+}
+
+function drawSprite(g, b, sprite) {
+  if (b.motion === 'scurry') {
+    // Ground shadow so runners pop off the floor.
+    g.fillStyle = '#00000040';
+    g.beginPath();
+    g.ellipse(b.x, b.y + b.r * 0.95, b.r * 1.1, b.r * 0.25, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.save();
+  g.translate(b.x, b.y);
+  g.rotate(b.angle || Math.sin(b.t * b.swayF + b.phase) * 0.15);
+  // Apple's animal emoji face left; mirror when moving right.
+  if (b.flip) g.scale(-1, 1);
+  g.font = `${b.r * 2.3}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  if (b.gold) {
+    g.shadowColor = GOLD;
+    g.shadowBlur = 30;
+    g.fillText(sprite, 0, 0);
+    g.shadowBlur = 0;
+  }
+  if (b.motion === 'scurry') {
+    // Ground runners (gray rat emoji) read faint: darken to a brown "NYC rat"
+    // (or tint gold), boost contrast and add a crisp dark outline.
+    g.filter = (b.gold ? 'sepia(1) saturate(4) brightness(1.05) ' : 'sepia(0.7) saturate(1.8) brightness(0.62) contrast(1.35) ')
+      + 'drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1.5px #000)';
+  }
+  g.fillText(sprite, 0, 0);
+  g.filter = 'none';
+  g.restore();
 }
 
 function drawBalloon(g, b) {
@@ -52,38 +141,27 @@ function drawBalloon(g, b) {
   g.fill();
 }
 
-function drawSky(g, ctx, clouds, t) {
-  const { W, H } = ctx;
-  const sky = g.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, '#2b6cb0');
-  sky.addColorStop(1, '#90cdf4');
-  g.fillStyle = sky;
-  g.fillRect(0, 0, W, H);
-  g.fillStyle = '#ffffffb0';
-  for (const c of clouds) {
-    const x = ((c.x * W + t * c.speed) % (W + 300)) - 150;
-    const y = c.y * H;
-    for (const [dx, dy, rr] of [[0, 0, 1], [0.9, 0.15, 0.75], [-0.9, 0.2, 0.7], [0.4, -0.35, 0.7]]) {
-      g.beginPath();
-      g.arc(x + dx * c.size, y + dy * c.size, rr * c.size, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
+function burstColors(ctx, b) {
+  const palette = ctx.theme?.burst;
+  return palette?.length ? palette : [b.color];
 }
 
-const clouds = Array.from({ length: 6 }, () => ({
-  x: Math.random(), y: 0.1 + Math.random() * 0.6, size: 30 + Math.random() * 40, speed: 8 + Math.random() * 18,
-}));
-let skyTime = 0;
-
-// Reusable layer: balloons rising + shooting them. Other games compose this.
+// Reusable layer: targets moving + shooting them. Other games compose this.
 //   rate: spawn-rate multiplier (e.g. 0.5 when the player is busy dodging)
 export const balloonLayer = {
-  init() {
-    return { balloons: [], spawnIn: 0, popped: 0 };
+  init(ctx) {
+    return { balloons: [], spawnIn: 0, popped: 0, themeName: ctx?.theme?.name };
   },
 
   update(state, ctx, dt, { rate = 1 } = {}) {
+    // Theme changed (voice): old targets burst into confetti, a fresh wave arrives.
+    const themeName = ctx.theme?.name;
+    if (themeName !== state.themeName) {
+      state.themeName = themeName;
+      for (const b of state.balloons) burstColors(ctx, b).forEach(c => ctx.fx.burst(b.x, b.y, c, 6, 260));
+      state.balloons = [];
+      if (ctx.run.phase === 'play') for (let i = 0; i < 3; i++) spawn(state, ctx);
+    }
     if (ctx.run.phase === 'play') {
       state.spawnIn -= dt;
       if (state.spawnIn <= 0) {
@@ -93,14 +171,13 @@ export const balloonLayer = {
     }
     for (const b of state.balloons) {
       b.t += dt;
-      b.y -= b.vy * dt;
-      b.x = b.x0 + Math.sin(b.phase + b.t * b.swayF) * b.sway;
+      MOTIONS[b.motion].update(b, dt);
     }
-    state.balloons = state.balloons.filter(b => b.y > -b.r * 4);
+    state.balloons = state.balloons.filter(b => !MOTIONS[b.motion].gone(b, ctx));
   },
 
   shoot(state, ctx, x, y) {
-    // Slightly generous hitbox; pick the closest balloon under the shot.
+    // Slightly generous hitbox; pick the closest target under the shot.
     let best = null;
     let bestD = Infinity;
     for (const b of state.balloons) {
@@ -110,28 +187,31 @@ export const balloonLayer = {
     if (!best) return false;
     state.balloons.splice(state.balloons.indexOf(best), 1);
     state.popped += 1;
-    ctx.fx.burst(best.x, best.y, best.color, best.gold ? 30 : 18);
+    const colors = burstColors(ctx, best);
+    colors.forEach(c => ctx.fx.burst(best.x, best.y, c, Math.ceil((best.gold ? 30 : 18) / colors.length)));
     ctx.addScore(best.gold ? 3 : 1, best.x, best.y - best.r, best.gold ? GOLD : '#fff');
     best.gold ? ctx.sfx.bonus() : ctx.sfx.pop();
     return true;
   },
 
   draw(state, ctx) {
-    for (const b of state?.balloons ?? []) drawBalloon(ctx.g, b);
+    const sprite = ctx.theme?.sprite;
+    for (const b of state?.balloons ?? []) sprite ? drawSprite(ctx.g, b, sprite) : drawBalloon(ctx.g, b);
   },
 };
 
+let sceneTime = 0;
 export default {
   id: 'balloons',
   title: 'Balloon Pop',
-  blurb: `Pop as many balloons as you can in ${DURATION} seconds. Gold = 3 points.`,
+  blurb: `Pop as many as you can in ${DURATION} seconds. Gold = 3 points. Say a theme to change them!`,
   duration: DURATION,
   init: balloonLayer.init,
   update: balloonLayer.update,
   shoot: balloonLayer.shoot,
   draw(state, ctx) {
-    skyTime += 1 / 60;
-    drawSky(ctx.g, ctx, clouds, skyTime);
+    sceneTime += 1 / 60;
+    drawScene(ctx.theme?.scene ?? 'sky', ctx.g, ctx.W, ctx.H, sceneTime, ctx.theme?.sky);
     balloonLayer.draw(state, ctx);
   },
 };

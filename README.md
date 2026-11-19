@@ -94,6 +94,9 @@ Games are built from shared parts in `livestream/lib/`:
 | `fx.js` | Particle bursts and floating score text |
 | `sound.js` | Synthesized sound effects (no assets) |
 | `filters.js` | 1€ smoothing filter |
+| `voice.js` | Always-on speech → `command` events (Web Speech API), auto-restart, `M` mutes |
+| `theme.js` | Current theme (sprite, motion, scene, colors) + `resolveTheme(text)` |
+| `scenes.js` | Procedural backgrounds: sky, NYC skyline, subway, pond |
 | `body.js` | Webcam pose tracking (MediaPipe, local): `duck`, `duckAmount`, `side`, `sideAmount`, `lean`, `hands`, camera preview |
 
 Camera games need the pose model once (downloads into git-ignored `livestream/vendor/`):
@@ -109,6 +112,16 @@ way; return to center between obstacles. `R` recalibrates standing position,
 
 **Gauntlet** (15 s) — Bob & Weave and Balloon Pop at once: dodge with your body,
 pop balloons with the wand.
+
+**Voice themes** — the mic is always listening (Chrome Web Speech, needs internet;
+`M` mutes). Say a theme and the targets change mid-round: NYC pack "pizza" (falling
+over a skyline), "rats" (scurrying in a subway), "ducks" (flying over a pond), plus
+"pigeons", "taxi", "bagels", "teddy bears", "cats", "unicorns"… "balloons" resets.
+Themes (`lib/theme.js`) carry `sprite`, `motion`, `scene`, `sky`, `burst` — the same
+JSON a future OpenAI resolver will return. Backgrounds live in `lib/scenes.js`.
+
+The page server (`tools/dev_server.py`, used by both scripts) sends `no-store` so
+code edits always show up on reload.
 
 Games also export reusable layers: `balloonLayer` (balloons.js) and `dodgeLayer`
 (duck.js, drawn as `drawWorld` + `drawOverlay`). `gauntlet.js` composes both.

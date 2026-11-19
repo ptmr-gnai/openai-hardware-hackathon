@@ -13,7 +13,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cd "$PROJECT_DIR"
-python3 -m http.server 8765 --bind 127.0.0.1 --directory livestream &
+python3 tools/dev_server.py --port 8765 &
 SERVER_PID=$!
 swift tools/h10_stream.swift --json-file livestream/hr.json &
 H10_PID=$!

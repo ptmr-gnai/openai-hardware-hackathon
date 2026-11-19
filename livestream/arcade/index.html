@@ -31,6 +31,8 @@
       import { runCalibration } from '../lib/calibrate.js';
       import { runMinigame } from '../lib/engine.js';
       import { createBody } from '../lib/body.js';
+      import { createVoice } from '../lib/voice.js';
+      import { theme, resolveTheme } from '../lib/theme.js';
       import { games } from './games/index.js';
 
       const wand = createWand({ surface: 'arcade' });
@@ -48,7 +50,16 @@
         wand.attachMouse(canvas);
         const body = game.needs?.includes('body') ? createBody() : null;
         body?.start().catch(error => console.warn('Body tracking unavailable:', error));
-        runMinigame(game, { canvas, wand, body, onExit: toMenu });
+        const voice = createVoice();
+        const engine = runMinigame(game, { canvas, wand, body, voice, onExit: toMenu });
+        // Say a theme ("teddy bears") → the targets change, mid-round included.
+        // Always listening, so phrases with no theme in them are ignored quietly.
+        voice.on('command', async text => {
+          const next = await resolveTheme(text);
+          if (!next) return;
+          theme.set(next);
+          engine.toast(next.sprite ? `${next.sprite}  ${next.name}!` : 'Back to balloons');
+        });
       } else {
         // Menu: the wand acts as a mouse — point at a card and press A.
         const menu = document.querySelector('#menu');

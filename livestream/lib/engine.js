@@ -12,6 +12,7 @@
 // Lifecycle: intro --shoot--> countdown (3 s) --> play (duration) --> results --shoot--> countdown ...
 import { createFx } from './fx.js';
 import { sfx } from './sound.js';
+import { theme } from './theme.js';
 
 const COUNTDOWN = 3;
 
@@ -57,7 +58,7 @@ function label(g, text, x, y, { size = 32, weight = 800, color = '#fff', align =
   g.fillText(text, x, y);
 }
 
-export function runMinigame(game, { canvas, wand, body = null, onExit } = {}) {
+export function runMinigame(game, { canvas, wand, body = null, voice = null, onExit } = {}) {
   const g = canvas.getContext('2d');
   let W = 0;
   let H = 0;
@@ -77,7 +78,8 @@ export function runMinigame(game, { canvas, wand, body = null, onExit } = {}) {
   const fx = createFx();
   const run = { phase: 'intro', phaseT: 0, score: 0, shots: 0, hits: 0, best: loadBest(game.id), newBest: false };
   const ctx = {
-    g, fx, sfx, run, body, wand,
+    g, fx, sfx, run, body, wand, voice,
+    get theme() { return theme.current; },
     get W() { return W; },
     get H() { return H; },
     rand: (a, b) => a + Math.random() * (b - a),
@@ -186,6 +188,14 @@ export function runMinigame(game, { canvas, wand, body = null, onExit } = {}) {
       label(g, stats, W / 2, H * 0.65, { size: s * 0.032, weight: 600 });
       if (run.phaseT > 1.2) label(g, 'Press A to play again · Esc for menu', W / 2, H * 0.76, { size: s * 0.035, color: '#ffdc5d' });
     }
+    if (voice?.supported) {
+      // Always-on mic: a quiet status line, plus a live caption while you talk.
+      const status = voice.error
+        ? `🎤 ${voice.error}`
+        : voice.enabled ? '🎤 listening — say a theme (M mutes)' : '🎤 muted (M to listen)';
+      label(g, status, W / 2, 30, { size: 14, weight: 600, color: voice.error ? '#ff5d8f' : '#ffffffaa' });
+      if (voice.interim) label(g, `“${voice.interim}”`, W / 2, 62, { size: 22, weight: 600, color: '#ffdc5d' });
+    }
     if (toast) {
       g.globalAlpha = Math.min(1, toast.t * 2);
       label(g, toast.text, W / 2, H - 60, { size: 22, weight: 700, color: '#ffdc5d' });
@@ -198,5 +208,5 @@ export function runMinigame(game, { canvas, wand, body = null, onExit } = {}) {
   }
 
   requestAnimationFrame(frame);
-  return { run, start };
+  return { run, start, toast: showToast };
 }
