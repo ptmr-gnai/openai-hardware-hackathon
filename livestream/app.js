@@ -12,11 +12,35 @@ const liveBadge = document.querySelector('#liveBadge');
 const micState = document.querySelector('#micState');
 const meter = document.querySelector('#meter');
 const meterContext = meter.getContext('2d');
+const heartRateCard = document.querySelector('#heartRateCard');
+const heartRateValue = document.querySelector('#heartRateValue');
+const rrValue = document.querySelector('#rrValue');
 
 let stream;
 let audioContext;
 let analyser;
 let meterFrame;
+
+async function refreshHeartRate() {
+  try {
+    const response = await fetch(`hr.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('No sensor snapshot');
+    const reading = await response.json();
+    const age = Date.now() - Date.parse(reading.timestamp);
+    if (!reading.connected || !Number.isFinite(age) || age > 5000) {
+      throw new Error('Sensor data is stale');
+    }
+    heartRateValue.textContent = reading.bpm;
+    const latestRr = reading.rrMs?.at(-1);
+    const battery = Number.isFinite(reading.batteryPercent) ? ` · ${reading.batteryPercent}%` : '';
+    rrValue.textContent = latestRr ? `RR ${Math.round(latestRr)} ms${battery}` : `Live${battery}`;
+    heartRateCard.classList.remove('waiting');
+  } catch {
+    heartRateValue.textContent = '—';
+    rrValue.textContent = 'Waiting for sensor';
+    heartRateCard.classList.add('waiting');
+  }
+}
 
 function setLive(isLive) {
   liveBadge.classList.toggle('live', isLive);
@@ -143,3 +167,5 @@ cameraSelect.addEventListener('change', event => start(event.target.value));
 window.addEventListener('beforeunload', stop);
 
 setLive(false);
+refreshHeartRate();
+setInterval(refreshHeartRate, 1000);

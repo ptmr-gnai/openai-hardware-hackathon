@@ -127,6 +127,37 @@ button.primary { background: #36ed8d; border-color: #36ed8d; color: #031008; fon
   position: absolute;
 }
 
+.heart-rate {
+  align-items: center;
+  backdrop-filter: blur(10px);
+  background: #07100ce8;
+  border: 1px solid #ff5d76;
+  border-radius: 10px;
+  display: flex;
+  gap: 11px;
+  padding: 10px 13px;
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  transition: opacity .2s, border-color .2s;
+  z-index: 2;
+}
+
+.heart-rate.waiting { border-color: #4e5c56; opacity: .65; }
+.heart-icon { color: #ff5d76; font-size: 26px; line-height: 1; }
+.heart-rate:not(.waiting) .heart-icon { animation: heartbeat 1s ease-in-out infinite; }
+.heart-rate div:last-child { display: flex; flex-direction: column; }
+.heart-rate span { color: #aebdb6; font-size: 9px; letter-spacing: .12em; }
+.heart-rate strong { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 18px; line-height: 1.15; }
+.heart-rate strong b { font-size: 25px; }
+.heart-rate small { color: #aebdb6; font-size: 9px; }
+
+@keyframes heartbeat {
+  0%, 45%, 100% { transform: scale(1); }
+  12% { transform: scale(1.2); }
+  24% { transform: scale(.96); }
+}
+
 .telemetry span {
   background: #07100ccf;
   border: 1px solid #345345;
@@ -170,4 +201,5 @@ select { flex: 1; }
   .controls { grid-template-columns: 1fr 1fr 1fr; }
   .controls label { grid-column: 1 / -1; }
   .audio-panel { grid-template-columns: 1fr; }
+  .heart-rate { right: 10px; top: 10px; }
 }

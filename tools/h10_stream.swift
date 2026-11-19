@@ -12,10 +12,13 @@ final class H10Client: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
     private var timeout: Timer?
     private let scanOnly: Bool
     private let scanSeconds: TimeInterval
+    private let jsonFile: URL?
+    private var batteryPercent: UInt8?
 
-    init(scanOnly: Bool, scanSeconds: TimeInterval) {
+    init(scanOnly: Bool, scanSeconds: TimeInterval, jsonFile: URL?) {
         self.scanOnly = scanOnly
         self.scanSeconds = scanSeconds
+        self.jsonFile = jsonFile
         super.init()
         central = CBCentralManager(delegate: self, queue: nil)
     }
@@ -148,6 +151,7 @@ final class H10Client: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         guard let data = characteristic.value else { return }
 
         if characteristic.uuid == batteryLevel, let level = data.first {
+            batteryPercent = level
             print("Battery: \(level)%")
         } else if characteristic.uuid == heartRateMeasurement {
             parseHeartRate(data)
@@ -183,6 +187,26 @@ final class H10Client: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let rr = rrMilliseconds.map { String(format: "%.1f", $0) }.joined(separator: ",")
         print("\(timestamp) bpm=\(bpm) rr_ms=[\(rr)]")
+        writeSnapshot(timestamp: timestamp, bpm: bpm, rrMilliseconds: rrMilliseconds)
+    }
+
+    private func writeSnapshot(timestamp: String, bpm: UInt16, rrMilliseconds: [Double]) {
+        guard let jsonFile = jsonFile else { return }
+        var snapshot: [String: Any] = [
+            "timestamp": timestamp,
+            "bpm": Int(bpm),
+            "rrMs": rrMilliseconds.map { ($0 * 10).rounded() / 10 },
+            "connected": true
+        ]
+        if let batteryPercent = batteryPercent {
+            snapshot["batteryPercent"] = Int(batteryPercent)
+        }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
+            try data.write(to: jsonFile, options: .atomic)
+        } catch {
+            print("Could not write JSON snapshot: \(error.localizedDescription)")
+        }
     }
 }
 
@@ -194,7 +218,14 @@ let scanSeconds: TimeInterval = secondsIndex.flatMap { index in
     guard valueIndex < arguments.endIndex else { return nil }
     return TimeInterval(arguments[valueIndex])
 } ?? 20
+let jsonIndex = arguments.firstIndex(of: "--json-file")
+let jsonFile: URL? = jsonIndex.flatMap { index in
+    let valueIndex = arguments.index(after: index)
+    guard valueIndex < arguments.endIndex else { return nil }
+    return URL(fileURLWithPath: String(arguments[valueIndex]))
+}
 
 print(scanOnly ? "Mode: detection only" : "Mode: live heart-rate stream")
-let client = H10Client(scanOnly: scanOnly, scanSeconds: scanSeconds)
+if let jsonFile = jsonFile { print("Publishing latest reading to \(jsonFile.path)") }
+let client = H10Client(scanOnly: scanOnly, scanSeconds: scanSeconds, jsonFile: jsonFile)
 RunLoop.main.run()

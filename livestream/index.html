@@ -24,6 +24,14 @@
           <button id="startButton" class="primary">Start livestream</button>
         </div>
         <div class="scanlines" aria-hidden="true"></div>
+        <div id="heartRateCard" class="heart-rate waiting" aria-live="polite">
+          <div class="heart-icon" aria-hidden="true">♥</div>
+          <div>
+            <span>POLAR H10</span>
+            <strong><b id="heartRateValue">—</b> BPM</strong>
+            <small id="rrValue">Waiting for sensor</small>
+          </div>
+        </div>
         <div class="telemetry">
           <span id="resolution">— × —</span>
           <span id="fps">— FPS</span>

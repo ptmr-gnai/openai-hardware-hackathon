@@ -28,3 +28,5 @@ tmp/
 *.kicad_pcb-bak
 *-backups/
 
+# Runtime sensor snapshots
+livestream/hr.json

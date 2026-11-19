@@ -40,3 +40,9 @@ Subscribe to its standard BLE heart-rate stream:
 ```sh
 swift tools/h10_stream.swift
 ```
+
+Run the camera preview and publish the H10 reading into its overlay:
+
+```sh
+./scripts/run-live-demo.sh
+```
