@@ -276,8 +276,9 @@ export const dodgeLayer = {
       g.font = '700 22px system-ui';
       g.fillText(`combo ×${state.combo}`, W / 2, 44);
     }
-    if (!state || ctx.run.phase !== 'play' || performance.now() < speedShownUntil) {
-      g.fillStyle = performance.now() < speedShownUntil ? '#ffdc5d' : '#ffffff99';
+    // Speed readout only appears briefly after pressing [ or ] (keys still work).
+    if (performance.now() < speedShownUntil) {
+      g.fillStyle = '#ffdc5d';
       g.font = '600 16px system-ui';
       g.fillText(`Speed ${Math.round(speed * 100)}%  ·  [ slower   ] faster`, W / 2, H * 0.9);
     }
