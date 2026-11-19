@@ -46,3 +46,24 @@ Run the camera preview and publish the H10 reading into its overlay:
 ```sh
 ./scripts/run-live-demo.sh
 ```
+
+## StickS3 pointer
+
+The first pointer slice uses the StickS3 BMI270 IMU over USB. Build and upload:
+
+```sh
+work/platformio-venv/bin/pio run -d pointer/firmware
+work/platformio-venv/bin/pio run -d pointer/firmware -t upload
+```
+
+Bridge its tilt and buttons into the frontend reticle:
+
+```sh
+work/platformio-venv/bin/python pointer/pointer_bridge.py
+```
+
+Button A is the trigger; Button B recenters the pointer. For frontend-only testing:
+
+```sh
+work/platformio-venv/bin/python pointer/pointer_bridge.py --simulate
+```

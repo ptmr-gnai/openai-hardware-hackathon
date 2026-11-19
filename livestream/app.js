@@ -15,6 +15,8 @@ const meterContext = meter.getContext('2d');
 const heartRateCard = document.querySelector('#heartRateCard');
 const heartRateValue = document.querySelector('#heartRateValue');
 const rrValue = document.querySelector('#rrValue');
+const pointerReticle = document.querySelector('#pointerReticle');
+const pointerStatus = document.querySelector('#pointerStatus');
 
 let stream;
 let audioContext;
@@ -39,6 +41,29 @@ async function refreshHeartRate() {
     heartRateValue.textContent = '—';
     rrValue.textContent = 'Waiting for sensor';
     heartRateCard.classList.add('waiting');
+  }
+}
+
+async function refreshPointer() {
+  try {
+    const response = await fetch(`pointer.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('No pointer snapshot');
+    const reading = await response.json();
+    const age = Date.now() / 1000 - reading.timestamp;
+    if (!reading.connected || !Number.isFinite(age) || age > 0.5) {
+      throw new Error('Pointer data is stale');
+    }
+    pointerReticle.style.left = `${reading.x * 100}%`;
+    pointerReticle.style.top = `${reading.y * 100}%`;
+    pointerReticle.classList.remove('waiting');
+    pointerReticle.classList.toggle('trigger', Boolean(reading.trigger));
+    pointerStatus.textContent = reading.transport === 'simulation' ? 'POINTER SIM' : 'STICKS3 / USB';
+    pointerStatus.classList.add('connected');
+  } catch {
+    pointerReticle.classList.add('waiting');
+    pointerReticle.classList.remove('trigger');
+    pointerStatus.textContent = 'POINTER WAITING';
+    pointerStatus.classList.remove('connected');
   }
 }
 
@@ -169,3 +194,5 @@ window.addEventListener('beforeunload', stop);
 setLive(false);
 refreshHeartRate();
 setInterval(refreshHeartRate, 1000);
+refreshPointer();
+setInterval(refreshPointer, 50);

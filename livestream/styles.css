@@ -158,6 +158,51 @@ button.primary { background: #36ed8d; border-color: #36ed8d; color: #031008; fon
   24% { transform: scale(.96); }
 }
 
+.pointer-reticle {
+  height: 38px;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: opacity .15s;
+  width: 38px;
+  z-index: 4;
+}
+
+.pointer-reticle::before,
+.pointer-reticle::after,
+.pointer-reticle i::before,
+.pointer-reticle i::after {
+  background: #ffdc5d;
+  content: "";
+  position: absolute;
+}
+
+.pointer-reticle::before { height: 2px; left: 0; top: 18px; width: 11px; }
+.pointer-reticle::after { height: 2px; right: 0; top: 18px; width: 11px; }
+.pointer-reticle i::before { height: 11px; left: 18px; top: 0; width: 2px; }
+.pointer-reticle i::after { bottom: 0; height: 11px; left: 18px; width: 2px; }
+.pointer-reticle span { border: 2px solid #ffdc5d; border-radius: 50%; inset: 12px; position: absolute; }
+.pointer-reticle.waiting { opacity: 0; }
+.pointer-reticle.trigger span { background: #ffdc5d; box-shadow: 0 0 18px #ffdc5d; }
+
+.pointer-status {
+  background: #07100ce8;
+  border: 1px solid #4e5c56;
+  border-radius: 5px;
+  color: #aebdb6;
+  font-size: 9px;
+  left: 16px;
+  letter-spacing: .08em;
+  padding: 6px 8px;
+  position: absolute;
+  top: 16px;
+  z-index: 3;
+}
+
+.pointer-status.connected { border-color: #ffdc5d; color: #ffdc5d; }
+
 .telemetry span {
   background: #07100ccf;
   border: 1px solid #345345;
@@ -202,4 +247,5 @@ select { flex: 1; }
   .controls label { grid-column: 1 / -1; }
   .audio-panel { grid-template-columns: 1fr; }
   .heart-rate { right: 10px; top: 10px; }
+  .pointer-status { left: 10px; top: 10px; }
 }
