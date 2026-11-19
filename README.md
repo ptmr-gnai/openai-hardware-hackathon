@@ -56,6 +56,14 @@ work/platformio-venv/bin/pio run -d pointer/firmware
 work/platformio-venv/bin/pio run -d pointer/firmware -t upload
 ```
 
+The firmware tracks orientation on the stick (Mahony AHRS on every ~190 Hz gyro
+sample, gravity correction only while not accelerating, on-device gyro bias
+learning) and reports each body axis's heading and elevation at ~100 Hz.
+
+Measure pointing quality (drift, jitter, return-to-centre, flick shift, link
+timing) with the guided page <http://127.0.0.1:8765/arcade/measure.html>.
+Baseline vs AHRS (USB): flick shift 62° → 6.8°, return-to-centre 6.8° → 2.6°.
+
 The firmware streams over USB and Bluetooth LE (`StickS3-Wand`) at the same time.
 The bridge picks USB when plugged in and Bluetooth otherwise, switching and
 reconnecting automatically (`--transport usb|ble` forces one). The first Bluetooth

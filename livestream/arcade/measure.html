@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wand Measure</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b1020; color: #fff; font-family: system-ui, sans-serif; overflow: hidden; }
+      [hidden] { display: none !important; }
+      canvas { position: fixed; inset: 0; }
+      #panel { position: fixed; left: 50%; top: 28px; transform: translateX(-50%); text-align: center; width: min(900px, 92vw); }
+      #panel h1 { margin: 0 0 6px; font-size: 30px; }
+      #panel p { margin: 6px 0; font-size: 20px; opacity: .9; }
+      #progress { height: 6px; background: #ffffff22; border-radius: 3px; overflow: hidden; margin-top: 10px; }
+      #progress div { height: 100%; width: 0; background: #ffdc5d; }
+      #results { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #131a33; border: 1px solid #3a506b; border-radius: 14px; padding: 22px 28px; width: min(760px, 92vw); max-height: 86vh; overflow: auto; }
+      #results h2 { margin-top: 0; }
+      table { width: 100%; border-collapse: collapse; font-size: 15px; }
+      td { padding: 6px 4px; border-bottom: 1px solid #ffffff14; }
+      td:nth-child(2) { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+      td:nth-child(3) { opacity: .65; font-size: 13px; padding-left: 14px; }
+      .good { color: #06d6a0; } .ok { color: #ffdc5d; } .bad { color: #ff5d8f; }
+      button { background: #36ed8d; color: #031008; border: 0; border-radius: 10px; padding: 12px 18px; font: 700 16px system-ui; cursor: pointer; margin-top: 14px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <div id="panel">
+      <h1 id="title">Wand measurement</h1>
+      <p id="instruction">About a minute, four short tests. Press A, click or Enter to begin.</p>
+      <div id="progress"><div></div></div>
+    </div>
+    <div id="results" hidden></div>
+    <script type="module">
+      // Guided pointing diagnostics. Reads the bridge's pointer.json at ~100 Hz
+      // (deduplicated by device clock) and reports drift, jitter, repeatability,
+      // cross-axis leak and link timing. Results: on screen, window.__measure,
+      // and localStorage 'wand.measure.last' (history in 'wand.measure.history').
+      const canvas = document.querySelector('#stage');
+      const g = canvas.getContext('2d');
+      const $ = s => document.querySelector(s);
+      const cal = (() => { try { return JSON.parse(localStorage.getItem('wandCalibration.v2.arcade')) ?? JSON.parse(localStorage.getItem('wandCalibration.v2')); } catch { return null; } })();
+      const pitchKey = cal?.pitchKey ?? 'y';
+      const pxPerDegX = cal ? Math.abs(cal.kx) * innerWidth : null;
+      const pxPerDegY = cal ? Math.abs(cal.ky) * innerHeight : null;
+
+      // ---- sampling ----
+      let samples = [];
+      let lastMs = null;
+      let latest = null;
+      let latestAt = 0;
+      const live = () => performance.now() - latestAt < 1000;
+      let lastTrigger = null;
+      let onPress = null;
+      async function poll() {
+        try {
+          const r = await (await fetch(`/pointer.json?t=${Date.now()}`, { cache: 'no-store' })).json();
+          if (!r.connected || r.rawYaw === undefined) return;
+          latest = r;
+          latestAt = performance.now();
+          if (lastTrigger !== null && r.triggerCount !== lastTrigger) onPress?.();
+          lastTrigger = r.triggerCount;
+          if (r.ms === lastMs) return;
+          lastMs = r.ms;
+          samples.push({ t: performance.now(), ms: r.ms, yaw: r.rawHeading?.[pitchKey] ?? r.rawYaw, pitch: r.rawPitch[pitchKey], still: r.still,
+            age: Date.now() / 1000 - r.timestamp, transport: r.transport, gyro: r.raw?.slice(3) });
+        } catch {}
+      }
+      setInterval(poll, 8);
+
+      // ---- stats helpers ----
+      const mean = a => a.reduce((s, v) => s + v, 0) / (a.length || 1);
+      const std = a => { const m = mean(a); return Math.sqrt(mean(a.map(v => (v - m) ** 2))); };
+      const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
+      const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * p))] : NaN; };
+      const slope = (xs, ys) => { const mx = mean(xs), my = mean(ys); let n = 0, d = 0; xs.forEach((x, i) => { n += (x - mx) * (ys[i] - my); d += (x - mx) ** 2; }); return d ? n / d : 0; };
+      const detrend = (ts, ys) => { const k = slope(ts, ys), mx = mean(ts), my = mean(ys); return ys.map((y, i) => y - (my + k * (ts[i] - mx))); };
+      const between = (a, b) => samples.filter(s => s.t >= a && s.t < b);
+
+      // ---- script: phases with a target dot ----
+      const C = { x: 0.5, y: 0.5 }, L = { x: 0.15, y: 0.5 }, R = { x: 0.85, y: 0.5 };
+      const PHASES = [
+        { id: 'rest', title: '1/4 · Rest', text: 'Put the stick down FLAT on the table and let go. Don’t touch it.', dur: 20, dot: null },
+        { id: 'hold', title: '2/4 · Hold steady', text: 'Pick it up and point the tip at the pink dot. Hold as steady as you can.', dur: 10, dot: C },
+        ...['C', 'L', 'C', 'R', 'C', 'L', 'C', 'R', 'C'].map((k, i) => ({
+          id: `sweep${i}`, group: 'sweep', key: k, title: '3/4 · Follow the dot', text: 'Point at the pink dot wherever it goes. Smooth, normal movements.', dur: 2.6, dot: { C, L, R }[k],
+        })),
+        { id: 'flickPre', title: '4/4 · Flicks', text: 'Point at the dot and hold…', dur: 3, dot: C },
+        { id: 'flick', title: '4/4 · Flicks', text: 'FLICK fast left-right-left-right!', dur: 4, dot: null },
+        { id: 'flickPost', title: '4/4 · Flicks', text: 'Back to the dot and hold.', dur: 4, dot: C },
+      ];
+      let running = false;
+      let phase = null;
+      let marks = {};
+      let phaseStart = 0;
+
+      async function run() {
+        if (running) return;
+        if (!live()) {
+          $('#instruction').textContent = 'No live wand data — turn the StickS3 on (or plug in USB), then try again.';
+          return;
+        }
+        running = true;
+        $('#results').hidden = true;
+        samples = [];
+        marks = {};
+        const total = PHASES.reduce((s, p) => s + p.dur, 0);
+        let elapsed = 0;
+        for (const p of PHASES) {
+          phase = p;
+          $('#title').textContent = p.title;
+          $('#instruction').textContent = p.text;
+          phaseStart = performance.now();
+          marks[p.id] = { start: phaseStart, end: phaseStart + p.dur * 1000, ...p };
+          await new Promise(r => setTimeout(r, p.dur * 1000));
+          elapsed += p.dur;
+          $('#progress div').style.width = `${(elapsed / total) * 100}%`;
+        }
+        phase = null;
+        running = false;
+        const result = analyze();
+        if (result.samples < 200) {
+          $('#title').textContent = 'Not enough data';
+          $('#instruction').textContent = `Only ${result.samples} samples arrived — the wand dropped out. Check it's on, then press Enter to retry.`;
+          return;
+        }
+        report(result);
+      }
+
+      function analyze() {
+        const out = { when: new Date().toISOString(), transport: samples.at(-1)?.transport, pitchKey, calibrated: Boolean(cal) };
+        // Rest: skip the first 4 s (setting it down), then drift + noise.
+        const m = marks.rest;
+        const rest = between(m.start + 4000, m.end);
+        if (rest.length > 20) {
+          const ts = rest.map(s => s.t / 1000);
+          out.restYawDriftDegPerMin = slope(ts, rest.map(s => s.yaw)) * 60;
+          out.restPitchDriftDegPerMin = slope(ts, rest.map(s => s.pitch)) * 60;
+          out.restYawNoiseDeg = std(detrend(ts, rest.map(s => s.yaw)));
+          out.restStillFraction = mean(rest.map(s => (s.still ? 1 : 0)));
+        }
+        // Hold: skip 3 s settle; jitter = detrended std (tremor + sensor noise).
+        const h = marks.hold;
+        const hold = between(h.start + 3000, h.end);
+        if (hold.length > 20) {
+          const ts = hold.map(s => s.t / 1000);
+          out.holdJitterYawDeg = std(detrend(ts, hold.map(s => s.yaw)));
+          out.holdJitterPitchDeg = std(detrend(ts, hold.map(s => s.pitch)));
+          out.holdWanderYawDeg = Math.max(...hold.map(s => s.yaw)) - Math.min(...hold.map(s => s.yaw));
+        }
+        // Sweeps: settled aim at the end of each dwell. Centre repeatability +
+        // vertical leak (only horizontal targets, so pitch should not change).
+        const dwell = PHASES.filter(p => p.group === 'sweep').map(p => {
+          const mk = marks[p.id];
+          const seg = between(mk.end - 1000, mk.end);
+          return { key: p.key, yaw: median(seg.map(s => s.yaw)), pitch: median(seg.map(s => s.pitch)) };
+        }).filter(d => Number.isFinite(d.yaw));
+        const centres = dwell.filter(d => d.key === 'C');
+        if (centres.length >= 3) {
+          out.centerRepeatYawDeg = Math.max(...centres.map(d => d.yaw)) - Math.min(...centres.map(d => d.yaw));
+          out.centerRepeatPitchDeg = Math.max(...centres.map(d => d.pitch)) - Math.min(...centres.map(d => d.pitch));
+          const lefts = dwell.filter(d => d.key === 'L'), rights = dwell.filter(d => d.key === 'R');
+          out.sweepSpanYawDeg = mean(rights.map(d => d.yaw)) - mean(lefts.map(d => d.yaw));
+          const sides = [...lefts, ...rights];
+          out.sweepPitchLeakDeg = Math.max(...sides.map(d => Math.abs(d.pitch - mean(centres.map(c => c.pitch)))));
+        }
+        // Flicks: does the same physical aim read the same after fast motion?
+        const pre = between(marks.flickPre.end - 1200, marks.flickPre.end);
+        const post = between(marks.flickPost.end - 1500, marks.flickPost.end);
+        if (pre.length > 5 && post.length > 5) {
+          out.flickShiftYawDeg = median(post.map(s => s.yaw)) - median(pre.map(s => s.yaw));
+          out.flickShiftPitchDeg = median(post.map(s => s.pitch)) - median(pre.map(s => s.pitch));
+          const fl = between(marks.flick.start, marks.flick.end).filter(s => s.gyro);
+          out.flickPeakGyroDps = Math.max(0, ...fl.map(s => Math.max(...s.gyro.map(Math.abs))));
+        }
+        // Link: device sample rate, gaps, end-to-end age when the page read it.
+        const ms = samples.map(s => s.ms);
+        const gaps = ms.slice(1).map((v, i) => v - ms[i]).filter(v => v > 0 && v < 2000);
+        out.sampleRateHz = gaps.length ? 1000 / mean(gaps) : NaN;
+        out.gapP95Ms = pct(gaps, 0.95);
+        out.droppedPct = gaps.length ? (gaps.filter(v => v > 30).reduce((s, v) => s + Math.round(v / 20) - 1, 0) / (gaps.length + 1)) * 100 : NaN;
+        out.ageMedianMs = median(samples.map(s => s.age * 1000));
+        out.ageP95Ms = pct(samples.map(s => s.age * 1000), 0.95);
+        out.samples = samples.length;
+        return out;
+      }
+
+      function report(r) {
+        window.__measure = r;
+        try {
+          localStorage.setItem('wand.measure.last', JSON.stringify(r));
+          const hist = JSON.parse(localStorage.getItem('wand.measure.history') ?? '[]');
+          hist.push(r);
+          localStorage.setItem('wand.measure.history', JSON.stringify(hist.slice(-20)));
+        } catch {}
+        const px = (deg, axis) => (axis === 'x' ? pxPerDegX : pxPerDegY) ? ` ≈ ${Math.round(Math.abs(deg) * (axis === 'x' ? pxPerDegX : pxPerDegY))} px` : '';
+        const grade = (v, good, ok) => (Math.abs(v) <= good ? 'good' : Math.abs(v) <= ok ? 'ok' : 'bad');
+        const row = (label, v, unit, note, good, ok, axis) => Number.isFinite(v)
+          ? `<tr><td>${label}</td><td class="${grade(v, good, ok)}">${v.toFixed(unit === '%' || unit === 'Hz' || unit === 'ms' ? 0 : 2)} ${unit}${axis ? px(v, axis) : ''}</td><td>${note}</td></tr>` : '';
+        $('#results').innerHTML = `
+          <h2>Results · ${r.transport?.toUpperCase() ?? '?'}</h2>
+          <table>
+            ${row('Drift at rest (left/right)', r.restYawDriftDegPerMin, '°/min', 'yaw creep while untouched', 0.3, 1.5, 'x')}
+            ${row('Drift at rest (up/down)', r.restPitchDriftDegPerMin, '°/min', 'should be ~0 (gravity-anchored)', 0.1, 0.5, 'y')}
+            ${row('Sensor noise at rest', r.restYawNoiseDeg, '°', 'detrended', 0.02, 0.08, 'x')}
+            ${row('Hand jitter (left/right)', r.holdJitterYawDeg, '°', 'held at a dot', 0.15, 0.4, 'x')}
+            ${row('Hand jitter (up/down)', r.holdJitterPitchDeg, '°', 'held at a dot', 0.15, 0.4, 'y')}
+            ${row('Return-to-centre spread (L/R)', r.centerRepeatYawDeg, '°', 'same dot, 5 visits', 0.5, 1.5, 'x')}
+            ${row('Return-to-centre spread (U/D)', r.centerRepeatPitchDeg, '°', 'same dot, 5 visits', 0.4, 1.2, 'y')}
+            ${row('Vertical leak in sideways sweeps', r.sweepPitchLeakDeg, '°', 'targets were level', 0.5, 1.5, 'y')}
+            ${row('Sideways sweep span', r.sweepSpanYawDeg, '°', 'left dot → right dot', 999, 999)}
+            ${row('Shift after fast flicks (L/R)', r.flickShiftYawDeg, '°', 'same dot before/after', 0.5, 2, 'x')}
+            ${row('Shift after fast flicks (U/D)', r.flickShiftPitchDeg, '°', 'same dot before/after', 0.5, 2, 'y')}
+            ${row('Peak flick speed', r.flickPeakGyroDps, '°/s', 'gyro range is ±2000 (USB only)', 9999, 9999)}
+            ${row('Sample rate', r.sampleRateHz, 'Hz', 'from the stick', 9999, 9999)}
+            ${row('Dropped samples', r.droppedPct, '%', 'gaps in the stream', 1, 5)}
+            ${row('Data age when read (median)', r.ageMedianMs, 'ms', 'bridge → page', 20, 40)}
+            ${row('Data age when read (p95)', r.ageP95Ms, 'ms', 'worst 5%', 35, 70)}
+          </table>
+          <button id="again">Run again</button>`;
+        $('#results').hidden = false;
+        $('#again').onclick = run;
+        $('#title').textContent = 'Done';
+        $('#instruction').textContent = 'Results below. Press A or Enter to run again.';
+      }
+
+      // ---- drawing: dot only (no reticle, so you can't steer onto it) ----
+      function draw() {
+        const W = innerWidth, H = innerHeight;
+        canvas.width = W * devicePixelRatio; canvas.height = H * devicePixelRatio;
+        g.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+        g.clearRect(0, 0, W, H);
+        if (phase?.dot) {
+          const pulse = 1 + Math.sin(performance.now() / 150) * 0.1;
+          g.fillStyle = '#ff5d8f';
+          g.strokeStyle = '#fff';
+          g.lineWidth = 3;
+          g.beginPath();
+          g.arc(phase.dot.x * W, phase.dot.y * H, 14 * pulse, 0, Math.PI * 2);
+          g.fill(); g.stroke();
+        }
+        if (phase) {
+          const left = Math.max(0, phase.dur - (performance.now() - phaseStart) / 1000);
+          g.fillStyle = '#ffffff88';
+          g.font = '600 18px system-ui';
+          g.textAlign = 'center';
+          g.fillText(`${left.toFixed(1)} s`, W / 2, H - 40);
+        }
+        if (!live()) {
+          g.fillStyle = '#ff5d8f';
+          g.font = '600 18px system-ui';
+          g.textAlign = 'center';
+          g.fillText('Waiting for wand data from the bridge…', W / 2, H - 70);
+        }
+        requestAnimationFrame(draw);
+      }
+      draw();
+
+      onPress = () => { if (!running) run(); };
+      addEventListener('keydown', e => { if (e.key === 'Enter' && !running) run(); });
+      addEventListener('click', e => { if (!running && e.target.tagName !== 'BUTTON') run(); });
+    </script>
+  </body>
+</html>

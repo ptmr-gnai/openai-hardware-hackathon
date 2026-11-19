@@ -234,6 +234,9 @@ class GyroPointerMapper:
             "pressPitch": {k: round(v, 3) for k, v in self.press_pitch.items()},
             "recenterCount": self.recenter_count,
             "session": SESSION,
+            # Raw sensor sample + device clock, for diagnostics (arcade/measure.html).
+            "ms": ms,
+            "raw": [round(v, 4) for v in (*accel, *gyro)],
             "mode": "gyro",
             "transport": getattr(self, "transport", "usb"),
         }
@@ -296,6 +299,130 @@ class BlePacketDecoder:
         }
 
 
+BLE_ORI_UUID = "6e9b0003-5a1d-4c8e-9b1a-57a9c4e5a301"  # AHRS firmware (OriPacket)
+
+
+class OriPacketDecoder:
+    """16-byte AHRS notifications → the same dicts the USB {"type":"ori"} JSON gives."""
+
+    def __init__(self) -> None:
+        self.ms = 0
+        self.last_raw_ms = None
+
+    def decode(self, data: bytes) -> dict | None:
+        if len(data) != BLE_PACKET.size:
+            return None
+        raw_ms, hx, hy, hz, ex, ey, ez, buttons, recenter_count = BLE_PACKET.unpack(data)
+        if self.last_raw_ms is not None:
+            self.ms += (raw_ms - self.last_raw_ms) & 0xFFFF  # 16-bit wraparound
+        self.last_raw_ms = raw_ms
+        return {
+            "type": "ori",
+            "ms": self.ms,
+            "h": [hx / 100, hy / 100, hz / 100],
+            "e": [ex / 100, ey / 100, ez / 100],
+            "trigger": bool(buttons & 1),
+            "still": bool(buttons & 2),
+            "rc": recenter_count,
+        }
+
+
+class OrientationMapper:
+    """Maps on-device AHRS output (per-axis heading + elevation) to pointer.json.
+
+    Headings are unwrapped into continuous angles so crossing ±180° never jumps.
+    Output keeps the GyroPointerMapper fields the frontend uses (rawYaw, rawPitch,
+    triggerCount, recenterCount, pressYaw/pressPitch) and adds per-axis
+    rawHeading / pressHeading so calibration can pick the stick's forward axis.
+    """
+
+    def __init__(self) -> None:
+        self.transport = "usb"
+        self.last_ms = None
+        self.unwrapped = None
+        self.last_heading = None
+        self.trigger_count = 0
+        self.recenter_count = 0
+        self.last_trigger = False
+        self.last_rc = None
+        self.history = collections.deque(maxlen=80)  # ~0.8 s at 100 Hz
+        self.press = None
+        self.center = None
+
+    def map(self, reading: dict) -> dict:
+        h = [float(v) for v in reading["h"]]
+        e = [float(v) for v in reading["e"]]
+        ms = int(reading["ms"])
+        if self.unwrapped is None:
+            self.unwrapped = list(h)
+        else:
+            for i in range(3):
+                self.unwrapped[i] += ((h[i] - self.last_heading[i] + 180) % 360) - 180
+        self.last_heading = h
+        heading = {name: round(self.unwrapped[i], 3) for name, i in AXES.items()}
+        pitch = {name: round(e[i], 3) for name, i in AXES.items()}
+
+        rc = reading.get("rc")
+        recentered = self.last_rc is not None and rc != self.last_rc
+        self.last_rc = rc
+        if recentered:
+            self.recenter_count += 1
+
+        # Pressing A jolts the stick, so report where it pointed just before.
+        self.history.append((ms, heading, pitch))
+        trigger = bool(reading.get("trigger"))
+        if trigger and not self.last_trigger:
+            self.trigger_count += 1
+            before = [item for item in self.history if item[0] <= ms - 120]
+            self.press = before[-1] if before else self.history[0]
+        self.last_trigger = trigger
+        press = self.press or (ms, heading, pitch)
+
+        # Legacy x/y (uncalibrated fallback): forward = body y, ±25° to the edges.
+        if self.center is None or recentered:
+            self.center = (heading["y"], pitch["y"])
+        x = min(1.0, max(0.0, 0.5 - (heading["y"] - self.center[0]) / 50))
+        y = min(1.0, max(0.0, 0.5 - (pitch["y"] - self.center[1]) / 50))
+        return {
+            "connected": True,
+            "timestamp": time.time(),
+            "x": round(x, 5),
+            "y": round(y, 5),
+            "trigger": trigger,
+            "recentered": recentered,
+            "rawYaw": heading["y"],
+            "rawHeading": heading,
+            "rawPitch": pitch,
+            "triggerCount": self.trigger_count,
+            "pressYaw": press[1]["y"],
+            "pressHeading": press[1],
+            "pressPitch": press[2],
+            "recenterCount": self.recenter_count,
+            "still": bool(reading.get("still")),
+            "session": SESSION,
+            "ms": ms,
+            "raw": reading.get("raw"),
+            "mode": "ahrs",
+            "transport": self.transport,
+        }
+
+
+class WandMapper:
+    """Routes each reading to the right mapper: AHRS firmware ('ori') or legacy raw IMU ('imu')."""
+
+    def __init__(self, legacy) -> None:
+        self.ori = OrientationMapper()
+        self.legacy = legacy
+
+    def set_transport(self, transport: str) -> None:
+        for mapper in (self.ori, self.legacy):
+            mapper.transport = transport
+            mapper.last_ms = None
+
+    def map(self, reading: dict) -> dict:
+        return (self.ori if reading.get("type") == "ori" else self.legacy).map(reading)
+
+
 def run_serial_once(port: str, args: argparse.Namespace, mapper, output: Path, stop: list[bool]) -> None:
     """Stream from USB until unplugged or stopped."""
     import serial
@@ -311,7 +438,7 @@ def run_serial_once(port: str, args: argparse.Namespace, mapper, output: Path, s
                     reading = json.loads(line)
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     continue
-                if reading.get("type") != "imu":
+                if reading.get("type") not in ("imu", "ori"):
                     continue
                 write_atomic(output, mapper.map(reading))
     except (serial.SerialException, OSError) as error:
@@ -330,16 +457,19 @@ async def run_ble_once(args: argparse.Namespace, mapper, output: Path, stop: lis
     if device is None or stop[0]:
         return
     disconnected = asyncio.Event()
-    decoder = BlePacketDecoder()
-
-    def on_packet(_sender, data: bytearray) -> None:
-        reading = decoder.decode(bytes(data))
-        if reading is not None:
-            write_atomic(output, mapper.map(reading))
 
     async with BleakClient(device, disconnected_callback=lambda _c: disconnected.set()) as client:
-        print(f"BLE: connected to {device.name or device.address}", flush=True)
-        await client.start_notify(BLE_IMU_UUID, on_packet)
+        # AHRS firmware exposes the orientation characteristic; older firmware raw IMU.
+        has_ori = client.services.get_characteristic(BLE_ORI_UUID) is not None
+        decoder = OriPacketDecoder() if has_ori else BlePacketDecoder()
+
+        def on_packet(_sender, data: bytearray) -> None:
+            reading = decoder.decode(bytes(data))
+            if reading is not None:
+                write_atomic(output, mapper.map(reading))
+
+        print(f"BLE: connected to {device.name or device.address} ({'ahrs' if has_ori else 'raw imu'})", flush=True)
+        await client.start_notify(BLE_ORI_UUID if has_ori else BLE_IMU_UUID, on_packet)
         while not stop[0] and not disconnected.is_set():
             # In auto mode, prefer the cable as soon as it is plugged in.
             if args.transport == "auto" and not args.port and find_serial_port():
@@ -351,29 +481,33 @@ async def run_ble_once(args: argparse.Namespace, mapper, output: Path, stop: lis
 
 def run_device(args: argparse.Namespace, output: Path, stop: list[bool]) -> None:
     """Keep the wand connected: USB when plugged in, otherwise Bluetooth. Reconnects forever."""
-    if args.mode == "gyro":
-        mapper = GyroPointerMapper(args)
-    else:
-        mapper = PointerMapper(args.sensitivity, args.smoothing)
+    legacy = GyroPointerMapper(args) if args.mode == "gyro" else PointerMapper(args.sensitivity, args.smoothing)
+    mapper = WandMapper(legacy)
+    transport = "?"
     waiting_reported = False
+    # One event loop for the bridge's whole life. CoreBluetooth keeps delivering
+    # callbacks (e.g. when macOS restarts bluetoothd) to the loop a manager was
+    # created on; a fresh asyncio.run() per reconnect left closed loops behind and
+    # crashed the process with "Event loop is closed".
+    ble_loop = asyncio.new_event_loop()
     while not stop[0]:
         port = None
         if args.transport in ("auto", "usb"):
             port = args.port or find_serial_port()
         try:
             if port:
-                mapper.transport = "usb"
-                mapper.last_ms = None
+                transport = "usb"
+                mapper.set_transport(transport)
                 run_serial_once(port, args, mapper, output, stop)
             elif args.transport in ("auto", "ble"):
-                mapper.transport = "ble"
-                mapper.last_ms = None
-                asyncio.run(run_ble_once(args, mapper, output, stop))
+                transport = "ble"
+                mapper.set_transport(transport)
+                ble_loop.run_until_complete(run_ble_once(args, mapper, output, stop))
             elif not waiting_reported:
                 print("USB: waiting for StickS3…", flush=True)
                 waiting_reported = True
         except Exception as error:  # keep the bridge alive through radio hiccups
-            print(f"{mapper.__dict__.get('transport', '?').upper()}: error {error!r}", flush=True)
+            print(f"{transport.upper()}: error {error!r}", flush=True)
         write_atomic(output, {"connected": False, "timestamp": time.time()})
         if not stop[0]:
             time.sleep(1)
