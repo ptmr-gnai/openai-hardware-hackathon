@@ -310,9 +310,11 @@ class OriPacketDecoder:
         self.last_raw_ms = None
 
     def decode(self, data: bytes) -> dict | None:
-        if len(data) != BLE_PACKET.size:
+        # 16 bytes = AHRS; 18 bytes = AHRS + ToF distance (uint16 mm).
+        if len(data) not in (BLE_PACKET.size, BLE_PACKET.size + 2):
             return None
-        raw_ms, hx, hy, hz, ex, ey, ez, buttons, recenter_count = BLE_PACKET.unpack(data)
+        raw_ms, hx, hy, hz, ex, ey, ez, buttons, recenter_count = BLE_PACKET.unpack(data[: BLE_PACKET.size])
+        distance = struct.unpack("<H", data[BLE_PACKET.size :])[0] if len(data) > BLE_PACKET.size else None
         if self.last_raw_ms is not None:
             self.ms += (raw_ms - self.last_raw_ms) & 0xFFFF  # 16-bit wraparound
         self.last_raw_ms = raw_ms
@@ -324,6 +326,7 @@ class OriPacketDecoder:
             "trigger": bool(buttons & 1),
             "still": bool(buttons & 2),
             "rc": recenter_count,
+            "d": distance,
         }
 
 
@@ -402,6 +405,8 @@ class OrientationMapper:
             "session": SESSION,
             "ms": ms,
             "raw": reading.get("raw"),
+            # ToF distance to whatever the wand points at (mm); None = no sensor / out of range.
+            "distanceMm": reading.get("d") or None,
             "mode": "ahrs",
             "transport": self.transport,
         }
