@@ -5,7 +5,9 @@
 //     init(ctx) -> state,                  // fresh state for a round
 //     update(state, ctx, dt),              // ctx.run.phase tells you intro/countdown/play/results
 //     draw(state, ctx),                    // state may be null on the intro screen
-//     shoot(state, ctx, x, y) -> boolean } // pixel coords; return true on a hit
+//     shoot(state, ctx, x, y) -> boolean,  // optional; pixel coords; return true on a hit
+//     needs: ['body'],                     // optional; parts the game uses (ctx.body)
+//     summary(state, run) -> string }      // optional; results-screen stat line
 //
 // Lifecycle: intro --shoot--> countdown (3 s) --> play (duration) --> results --shoot--> countdown ...
 import { createFx } from './fx.js';
@@ -55,7 +57,7 @@ function label(g, text, x, y, { size = 32, weight = 800, color = '#fff', align =
   g.fillText(text, x, y);
 }
 
-export function runMinigame(game, { canvas, wand, onExit } = {}) {
+export function runMinigame(game, { canvas, wand, body = null, onExit } = {}) {
   const g = canvas.getContext('2d');
   let W = 0;
   let H = 0;
@@ -75,7 +77,7 @@ export function runMinigame(game, { canvas, wand, onExit } = {}) {
   const fx = createFx();
   const run = { phase: 'intro', phaseT: 0, score: 0, shots: 0, hits: 0, best: loadBest(game.id), newBest: false };
   const ctx = {
-    g, fx, sfx, run,
+    g, fx, sfx, run, body, wand,
     get W() { return W; },
     get H() { return H; },
     rand: (a, b) => a + Math.random() * (b - a),
@@ -113,13 +115,14 @@ export function runMinigame(game, { canvas, wand, onExit } = {}) {
   wand.on('shoot', ({ x, y }) => {
     flash = 1;
     if (run.phase === 'intro' || (run.phase === 'results' && run.phaseT > 1.2)) return start();
-    if (run.phase !== 'play') return;
+    if (run.phase !== 'play' || !game.shoot) return;
     run.shots += 1;
     sfx.shoot();
     if (game.shoot(state, ctx, x * W, y * H)) run.hits += 1;
     else fx.puff(x * W, y * H);
   });
   addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (run.phase === 'intro' || (run.phase === 'results' && run.phaseT > 1.2))) start();
     if (event.key === 'Escape' && !wand.capturing) onExit?.();
   });
 
@@ -169,7 +172,7 @@ export function runMinigame(game, { canvas, wand, onExit } = {}) {
     if (run.phase === 'intro') {
       label(g, game.title, W / 2, H * 0.36, { size: s * 0.11 });
       label(g, game.blurb, W / 2, H * 0.36 + s * 0.11, { size: s * 0.035, weight: 600 });
-      label(g, 'Press A (or click) to start', W / 2, H * 0.62, { size: s * 0.045, color: '#ffdc5d' });
+      label(g, game.needs?.includes('body') ? 'Press A, click or Enter to start' : 'Press A (or click) to start', W / 2, H * 0.62, { size: s * 0.045, color: '#ffdc5d' });
       if (run.best) label(g, `Best: ${run.best}`, W / 2, H * 0.62 + s * 0.08, { size: s * 0.035, weight: 600 });
     }
     if (run.phase === 'results') {
@@ -179,7 +182,8 @@ export function runMinigame(game, { canvas, wand, onExit } = {}) {
       label(g, "Time's up!", W / 2, H * 0.3, { size: s * 0.08 });
       label(g, `${run.score}`, W / 2, H * 0.45, { size: s * 0.18, color: '#ffdc5d' });
       label(g, run.newBest ? 'NEW BEST!' : `Best: ${run.best}`, W / 2, H * 0.58, { size: s * 0.045, color: run.newBest ? '#06d6a0' : '#fff' });
-      label(g, `${run.hits}/${run.shots} shots · ${accuracy}% accuracy`, W / 2, H * 0.65, { size: s * 0.032, weight: 600 });
+      const stats = game.summary ? game.summary(state, run) : `${run.hits}/${run.shots} shots · ${accuracy}% accuracy`;
+      label(g, stats, W / 2, H * 0.65, { size: s * 0.032, weight: 600 });
       if (run.phaseT > 1.2) label(g, 'Press A to play again · Esc for menu', W / 2, H * 0.76, { size: s * 0.035, color: '#ffdc5d' });
     }
     if (toast) {

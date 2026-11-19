@@ -95,6 +95,18 @@ Games are built from shared parts in `livestream/lib/`:
 | `sound.js` | Synthesized sound effects (no assets) |
 | `filters.js` | 1€ smoothing filter |
 
+| `body.js` | Webcam pose tracking (MediaPipe, local): `duck`, `duckAmount`, `lean`, `hands`, camera preview |
+
+Camera games need the pose model once (downloads into git-ignored `livestream/vendor/`):
+
+```sh
+./scripts/setup-vision.sh
+```
+
+**Duck!** — beams fly at head height; duck under each, stand back up between them.
+`R` recalibrates standing height, `Space`/`↓` ducks from the keyboard, `[` / `]`
+adjust beam speed (default 85%, or `?speed=0.7`).
+
 A minigame is one file in `livestream/arcade/games/` exporting
-`{ id, title, blurb, duration, init, update, draw, shoot }`, registered in
+`{ id, title, blurb, duration, init, update, draw }` plus optional `shoot`, `needs: ['body']` and `summary`, registered in
 `games/index.js`. See `balloons.js` (Balloon Pop: 15 s, gold balloons = 3 pts).

@@ -34,3 +34,4 @@ livestream/hr.json
 livestream/pointer.json
 .pio/
 livestream/.pointer.json.*
+livestream/vendor/

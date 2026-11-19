@@ -30,6 +30,7 @@
       import { createWand } from '../lib/wand.js';
       import { runCalibration } from '../lib/calibrate.js';
       import { runMinigame } from '../lib/engine.js';
+      import { createBody } from '../lib/body.js';
       import { games } from './games/index.js';
 
       const wand = createWand({ surface: 'arcade' });
@@ -45,7 +46,9 @@
         const canvas = document.querySelector('#stage');
         canvas.hidden = false;
         wand.attachMouse(canvas);
-        runMinigame(game, { canvas, wand, onExit: toMenu });
+        const body = game.needs?.includes('body') ? createBody() : null;
+        body?.start().catch(error => console.warn('Body tracking unavailable:', error));
+        runMinigame(game, { canvas, wand, body, onExit: toMenu });
       } else {
         // Menu: the wand acts as a mouse — point at a card and press A.
         const menu = document.querySelector('#menu');
