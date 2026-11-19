@@ -68,6 +68,75 @@ function drawSkyline(g, W, H) {
   }
 }
 
+// Static scenes are painted once per screen size into an offscreen canvas and
+// stamped each frame (thousands of skyline windows / tile lines per frame lag).
+const staticCache = new Map();
+function cachedStatic(name, W, H, sky, paint) {
+  const dpr = devicePixelRatio || 1;
+  const key = `${name}|${W}|${H}|${dpr}|${sky.join()}`;
+  let img = staticCache.get(key);
+  if (!img) {
+    img = document.createElement('canvas');
+    img.width = Math.ceil(W * dpr);
+    img.height = Math.ceil(H * dpr);
+    const g = img.getContext('2d');
+    g.scale(dpr, dpr);
+    paint(g, W, H, sky);
+    if (staticCache.size > 8) staticCache.clear();
+    staticCache.set(key, img);
+  }
+  return img;
+}
+
+
+function paintNyc(g, W, H, sky) {
+  gradient(g, W, H, sky);
+  // low sun glow
+  const sun = g.createRadialGradient(W * 0.75, H * 0.62, 10, W * 0.75, H * 0.62, H * 0.5);
+  sun.addColorStop(0, '#ffd16688');
+  sun.addColorStop(1, '#ffd16600');
+  g.fillStyle = sun;
+  g.fillRect(0, 0, W, H);
+  drawSkyline(g, W, H);
+}
+
+function paintSubway(g, W, H, sky) {
+  gradient(g, W, H, sky);
+  // white tile wall
+  const tileW = 46;
+  const tileH = 23;
+  g.fillStyle = '#e9ecef';
+  g.fillRect(0, 0, W, H * 0.72);
+  g.strokeStyle = '#adb5bd';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let y = 0; y < H * 0.72; y += tileH) {
+    g.moveTo(0, y); g.lineTo(W, y);
+    const offset = (y / tileH) % 2 ? tileW / 2 : 0;
+    for (let x = offset; x < W; x += tileW) { g.moveTo(x, y); g.lineTo(x, y + tileH); }
+  }
+  g.stroke();
+  // mosaic band + station sign
+  g.fillStyle = '#7b2d26';
+  g.fillRect(0, H * 0.18, W, H * 0.06);
+  g.fillStyle = '#111';
+  const signW = Math.min(420, W * 0.4);
+  g.fillRect(W / 2 - signW / 2, H * 0.3, signW, H * 0.09);
+  g.fillStyle = '#fff';
+  g.font = `700 ${H * 0.045}px Helvetica, Arial, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('14 St', W / 2, H * 0.345);
+  // platform + yellow safety edge.
+  // Light concrete platform: runners are drawn dark + outlined (balloons.js) to pop.
+  g.fillStyle = '#cfc8bb';
+  g.fillRect(0, H * 0.72, W, H * 0.28);
+  g.fillStyle = '#ffd60a';
+  g.fillRect(0, H * 0.72, W, H * 0.02);
+  g.fillStyle = '#0000000f';
+  for (let x = 0; x < W; x += 60) g.fillRect(x, H * 0.74, 2, H * 0.26);
+}
+
 const SCENES = {
   sky(g, W, H, t, sky) {
     gradient(g, W, H, sky);
@@ -75,51 +144,11 @@ const SCENES = {
   },
 
   nyc(g, W, H, t, sky) {
-    gradient(g, W, H, sky);
-    // low sun glow
-    const sun = g.createRadialGradient(W * 0.75, H * 0.62, 10, W * 0.75, H * 0.62, H * 0.5);
-    sun.addColorStop(0, '#ffd16688');
-    sun.addColorStop(1, '#ffd16600');
-    g.fillStyle = sun;
-    g.fillRect(0, 0, W, H);
-    drawSkyline(g, W, H);
+    g.drawImage(cachedStatic('nyc', W, H, sky, paintNyc), 0, 0, W, H);
   },
 
   subway(g, W, H, t, sky) {
-    gradient(g, W, H, sky);
-    // white tile wall
-    const tileW = 46;
-    const tileH = 23;
-    g.fillStyle = '#e9ecef';
-    g.fillRect(0, 0, W, H * 0.72);
-    g.strokeStyle = '#adb5bd';
-    g.lineWidth = 1;
-    g.beginPath();
-    for (let y = 0; y < H * 0.72; y += tileH) {
-      g.moveTo(0, y); g.lineTo(W, y);
-      const offset = (y / tileH) % 2 ? tileW / 2 : 0;
-      for (let x = offset; x < W; x += tileW) { g.moveTo(x, y); g.lineTo(x, y + tileH); }
-    }
-    g.stroke();
-    // mosaic band + station sign
-    g.fillStyle = '#7b2d26';
-    g.fillRect(0, H * 0.18, W, H * 0.06);
-    g.fillStyle = '#111';
-    const signW = Math.min(420, W * 0.4);
-    g.fillRect(W / 2 - signW / 2, H * 0.3, signW, H * 0.09);
-    g.fillStyle = '#fff';
-    g.font = `700 ${H * 0.045}px Helvetica, Arial, sans-serif`;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText('14 St', W / 2, H * 0.345);
-    // platform + yellow safety edge
-    // Light concrete platform: runners are drawn dark + outlined (balloons.js) to pop.
-    g.fillStyle = '#cfc8bb';
-    g.fillRect(0, H * 0.72, W, H * 0.28);
-    g.fillStyle = '#ffd60a';
-    g.fillRect(0, H * 0.72, W, H * 0.02);
-    g.fillStyle = '#0000000f';
-    for (let x = 0; x < W; x += 60) g.fillRect(x, H * 0.74, 2, H * 0.26);
+    g.drawImage(cachedStatic('subway', W, H, sky, paintSubway), 0, 0, W, H);
   },
 
   pond(g, W, H, t, sky) {
