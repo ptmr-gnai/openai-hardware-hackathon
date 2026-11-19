@@ -76,22 +76,19 @@ const clouds = Array.from({ length: 6 }, () => ({
 }));
 let skyTime = 0;
 
-export default {
-  id: 'balloons',
-  title: 'Balloon Pop',
-  blurb: `Pop as many balloons as you can in ${DURATION} seconds. Gold = 3 points.`,
-  duration: DURATION,
-
+// Reusable layer: balloons rising + shooting them. Other games compose this.
+//   rate: spawn-rate multiplier (e.g. 0.5 when the player is busy dodging)
+export const balloonLayer = {
   init() {
-    return { balloons: [], spawnIn: 0 };
+    return { balloons: [], spawnIn: 0, popped: 0 };
   },
 
-  update(state, ctx, dt) {
+  update(state, ctx, dt, { rate = 1 } = {}) {
     if (ctx.run.phase === 'play') {
       state.spawnIn -= dt;
       if (state.spawnIn <= 0) {
         spawn(state, ctx);
-        state.spawnIn = (0.7 - ctx.progress() * 0.35) * ctx.rand(0.7, 1.3);
+        state.spawnIn = ((0.7 - ctx.progress() * 0.35) / rate) * ctx.rand(0.7, 1.3);
       }
     }
     for (const b of state.balloons) {
@@ -112,6 +109,7 @@ export default {
     }
     if (!best) return false;
     state.balloons.splice(state.balloons.indexOf(best), 1);
+    state.popped += 1;
     ctx.fx.burst(best.x, best.y, best.color, best.gold ? 30 : 18);
     ctx.addScore(best.gold ? 3 : 1, best.x, best.y - best.r, best.gold ? GOLD : '#fff');
     best.gold ? ctx.sfx.bonus() : ctx.sfx.pop();
@@ -119,9 +117,21 @@ export default {
   },
 
   draw(state, ctx) {
+    for (const b of state?.balloons ?? []) drawBalloon(ctx.g, b);
+  },
+};
+
+export default {
+  id: 'balloons',
+  title: 'Balloon Pop',
+  blurb: `Pop as many balloons as you can in ${DURATION} seconds. Gold = 3 points.`,
+  duration: DURATION,
+  init: balloonLayer.init,
+  update: balloonLayer.update,
+  shoot: balloonLayer.shoot,
+  draw(state, ctx) {
     skyTime += 1 / 60;
     drawSky(ctx.g, ctx, clouds, skyTime);
-    if (!state) return;
-    for (const b of state.balloons) drawBalloon(ctx.g, b);
+    balloonLayer.draw(state, ctx);
   },
 };

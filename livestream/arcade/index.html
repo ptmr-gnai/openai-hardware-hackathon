@@ -58,7 +58,7 @@
         wand.attachMouse(menu);
         for (const g of games) {
           const button = document.createElement('button');
-          button.innerHTML = `${g.title}<small>${g.duration}s · ${g.blurb}</small>`;
+          button.innerHTML = `${g.title}<small>${g.blurb}</small>`;
           button.addEventListener('click', () => { location.search = `?game=${g.id}`; });
           list.append(button);
         }

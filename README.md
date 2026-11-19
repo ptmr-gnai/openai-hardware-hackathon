@@ -107,6 +107,12 @@ way; return to center between obstacles. `R` recalibrates standing position,
 `Space`/`↓` ducks and `←`/`→` dodge from the keyboard, `[` / `]` adjust speed
 (default 85%, or `?speed=0.7`).
 
+**Gauntlet** (15 s) — Bob & Weave and Balloon Pop at once: dodge with your body,
+pop balloons with the wand.
+
+Games also export reusable layers: `balloonLayer` (balloons.js) and `dodgeLayer`
+(duck.js, drawn as `drawWorld` + `drawOverlay`). `gauntlet.js` composes both.
+
 A minigame is one file in `livestream/arcade/games/` exporting
 `{ id, title, blurb, duration, init, update, draw }` plus optional `shoot`, `needs: ['body']` and `summary`, registered in
 `games/index.js`. See `balloons.js` (Balloon Pop: 15 s, gold balloons = 3 pts).

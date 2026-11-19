@@ -172,13 +172,9 @@ function drawMeters(g, W, H, duck, side) {
   g.stroke();
 }
 
-export default {
-  id: 'duck',
-  title: 'Bob & Weave',
-  blurb: `Duck under high beams, dodge side blocks, back to center between. ${DURATION} s.`,
-  duration: DURATION,
-  needs: ['body'],
-
+// Reusable layer: the obstacle course. Draw in two passes so other layers
+// (e.g. balloons) can go between the world and the HUD overlay.
+export const dodgeLayer = {
   init() {
     return {
       obstacles: [], spawnIn: 0.5, spawned: 0, recentKinds: [],
@@ -215,7 +211,7 @@ export default {
     if (state.message && (state.message.t -= dt) <= 0) state.message = null;
   },
 
-  draw(state, ctx) {
+  drawWorld(state, ctx) {
     const { g, W, H, body } = ctx;
     const vpY = H * 0.38;
     const duck = body.keyDuck ? 1.2 : body.duckAmount;
@@ -248,7 +244,12 @@ export default {
 
     drawPlayer(g, W, H, duck, side);
     g.restore();
+  },
 
+  drawOverlay(state, ctx) {
+    const { g, W, H, body } = ctx;
+    const duck = body.keyDuck ? 1.2 : body.duckAmount;
+    const side = body.dodgeAmount;
     drawMeters(g, W, H, duck, side);
     const pw = Math.min(260, W * 0.22);
     body.drawPreview(g, 16, H - pw * 0.75 - 16, pw, pw * 0.75);
@@ -283,6 +284,20 @@ export default {
     }
   },
 
+};
+
+export default {
+  id: 'duck',
+  title: 'Bob & Weave',
+  blurb: `Duck under high beams, dodge side blocks, back to center between. ${DURATION} s.`,
+  duration: DURATION,
+  needs: ['body'],
+  init: dodgeLayer.init,
+  update: dodgeLayer.update,
+  draw(state, ctx) {
+    dodgeLayer.drawWorld(state, ctx);
+    dodgeLayer.drawOverlay(state, ctx);
+  },
   summary(state) {
     return `${state.dodges} dodged · ${state.hits} bonked · best combo ${state.bestCombo}`;
   },
