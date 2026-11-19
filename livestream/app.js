@@ -186,7 +186,7 @@ async function refreshPointer() {
     pointerReticle.style.top = `${point.y * 100}%`;
     pointerReticle.classList.remove('waiting');
     pointerReticle.classList.toggle('trigger', Boolean(reading.trigger));
-    pointerStatus.textContent = reading.transport === 'simulation' ? 'POINTER SIM' : 'STICKS3 / USB';
+    pointerStatus.textContent = reading.transport === 'simulation' ? 'POINTER SIM' : `STICKS3 / ${(reading.transport ?? 'usb').toUpperCase()}`;
     pointerStatus.classList.add('connected');
   } catch {
     pointerReticle.classList.add('waiting');

@@ -56,6 +56,11 @@ work/platformio-venv/bin/pio run -d pointer/firmware
 work/platformio-venv/bin/pio run -d pointer/firmware -t upload
 ```
 
+The firmware streams over USB and Bluetooth LE (`StickS3-Wand`) at the same time.
+The bridge picks USB when plugged in and Bluetooth otherwise, switching and
+reconnecting automatically (`--transport usb|ble` forces one). The first Bluetooth
+run asks for macOS Bluetooth permission for the terminal app.
+
 Bridge its tilt and buttons into the frontend reticle:
 
 ```sh

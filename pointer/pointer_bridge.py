@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import collections
 import glob
 import json
 import math
 import os
 import signal
+import struct
 import sys
 import tempfile
 import time
@@ -73,7 +75,7 @@ class PointerMapper:
             "recentered": recentered,
             "pitch": round(pitch, 3),
             "roll": round(roll, 3),
-            "transport": "usb",
+            "transport": getattr(self, "transport", "usb"),
         }
 
 
@@ -233,7 +235,7 @@ class GyroPointerMapper:
             "recenterCount": self.recenter_count,
             "session": SESSION,
             "mode": "gyro",
-            "transport": "usb",
+            "transport": getattr(self, "transport", "usb"),
         }
 
 
@@ -258,21 +260,47 @@ def run_simulation(output: Path, stop: list[bool]) -> None:
         time.sleep(1 / 30)
 
 
-def run_serial(args: argparse.Namespace, output: Path, stop: list[bool]) -> None:
-    try:
-        import serial
-    except ImportError:
-        raise SystemExit("pyserial is required; use work/platformio-venv/bin/python")
+BLE_NAME = "StickS3-Wand"
+BLE_SERVICE_UUID = "6e9b0001-5a1d-4c8e-9b1a-57a9c4e5a301"
+BLE_IMU_UUID = "6e9b0002-5a1d-4c8e-9b1a-57a9c4e5a301"
+BLE_PACKET = struct.Struct("<H3h3hBB")  # see WandPacket in firmware/src/main.cpp
 
-    port = args.port or find_serial_port()
-    if not port:
-        raise SystemExit("No StickS3 serial port found. Connect it with a USB-C data cable.")
 
-    print(f"Reading StickS3 from {port} at {args.baud} baud")
-    if args.mode == "gyro":
-        mapper = GyroPointerMapper(args)
-    else:
-        mapper = PointerMapper(args.sensitivity, args.smoothing)
+class BlePacketDecoder:
+    """Turns 16-byte BLE notifications into the same dicts the USB JSON gives."""
+
+    def __init__(self) -> None:
+        self.ms = 0
+        self.last_raw_ms = None
+        self.last_recenter = None
+
+    def decode(self, data: bytes) -> dict | None:
+        if len(data) != BLE_PACKET.size:
+            return None
+        raw_ms, ax, ay, az, gx, gy, gz, buttons, recenter_count = BLE_PACKET.unpack(data)
+        if self.last_raw_ms is not None:
+            self.ms += (raw_ms - self.last_raw_ms) & 0xFFFF  # 16-bit wraparound
+        self.last_raw_ms = raw_ms
+        recenter = self.last_recenter is not None and recenter_count != self.last_recenter
+        self.last_recenter = recenter_count
+        ax, ay, az = ax / 4096, ay / 4096, az / 4096
+        return {
+            "type": "imu",
+            "ms": self.ms,
+            "ax": ax, "ay": ay, "az": az,
+            "gx": gx / 16, "gy": gy / 16, "gz": gz / 16,
+            "pitch": math.degrees(math.atan2(-ax, math.sqrt(ay * ay + az * az))),
+            "roll": math.degrees(math.atan2(ay, az)),
+            "trigger": bool(buttons & 1),
+            "recenter": recenter,
+        }
+
+
+def run_serial_once(port: str, args: argparse.Namespace, mapper, output: Path, stop: list[bool]) -> None:
+    """Stream from USB until unplugged or stopped."""
+    import serial
+
+    print(f"USB: reading StickS3 from {port}", flush=True)
     try:
         with serial.Serial(port, args.baud, timeout=1) as connection:
             while not stop[0]:
@@ -286,8 +314,69 @@ def run_serial(args: argparse.Namespace, output: Path, stop: list[bool]) -> None
                 if reading.get("type") != "imu":
                     continue
                 write_atomic(output, mapper.map(reading))
-    finally:
+    except (serial.SerialException, OSError) as error:
+        print(f"USB: disconnected ({error})", flush=True)
+
+
+async def run_ble_once(args: argparse.Namespace, mapper, output: Path, stop: list[bool]) -> None:
+    """Find the wand over Bluetooth and stream until it drops, USB appears, or stop."""
+    from bleak import BleakClient, BleakScanner
+
+    print("BLE: scanning for StickS3-Wand…", flush=True)
+    device = await BleakScanner.find_device_by_filter(
+        lambda d, ad: d.name == BLE_NAME or BLE_SERVICE_UUID in (ad.service_uuids or []),
+        timeout=5.0,
+    )
+    if device is None or stop[0]:
+        return
+    disconnected = asyncio.Event()
+    decoder = BlePacketDecoder()
+
+    def on_packet(_sender, data: bytearray) -> None:
+        reading = decoder.decode(bytes(data))
+        if reading is not None:
+            write_atomic(output, mapper.map(reading))
+
+    async with BleakClient(device, disconnected_callback=lambda _c: disconnected.set()) as client:
+        print(f"BLE: connected to {device.name or device.address}", flush=True)
+        await client.start_notify(BLE_IMU_UUID, on_packet)
+        while not stop[0] and not disconnected.is_set():
+            # In auto mode, prefer the cable as soon as it is plugged in.
+            if args.transport == "auto" and not args.port and find_serial_port():
+                print("BLE: USB detected, switching to cable", flush=True)
+                break
+            await asyncio.sleep(0.5)
+    print("BLE: disconnected", flush=True)
+
+
+def run_device(args: argparse.Namespace, output: Path, stop: list[bool]) -> None:
+    """Keep the wand connected: USB when plugged in, otherwise Bluetooth. Reconnects forever."""
+    if args.mode == "gyro":
+        mapper = GyroPointerMapper(args)
+    else:
+        mapper = PointerMapper(args.sensitivity, args.smoothing)
+    waiting_reported = False
+    while not stop[0]:
+        port = None
+        if args.transport in ("auto", "usb"):
+            port = args.port or find_serial_port()
+        try:
+            if port:
+                mapper.transport = "usb"
+                mapper.last_ms = None
+                run_serial_once(port, args, mapper, output, stop)
+            elif args.transport in ("auto", "ble"):
+                mapper.transport = "ble"
+                mapper.last_ms = None
+                asyncio.run(run_ble_once(args, mapper, output, stop))
+            elif not waiting_reported:
+                print("USB: waiting for StickS3…", flush=True)
+                waiting_reported = True
+        except Exception as error:  # keep the bridge alive through radio hiccups
+            print(f"{mapper.__dict__.get('transport', '?').upper()}: error {error!r}", flush=True)
         write_atomic(output, {"connected": False, "timestamp": time.time()})
+        if not stop[0]:
+            time.sleep(1)
 
 
 def main() -> int:
@@ -304,6 +393,8 @@ def main() -> int:
                         help="gyro mode: device axis that points at the screen (x, y, z, -x, -y, -z)")
     parser.add_argument("--invert-x", action="store_true")
     parser.add_argument("--invert-y", action="store_true")
+    parser.add_argument("--transport", choices=("auto", "usb", "ble"), default="auto",
+                        help="auto = USB when plugged in, otherwise Bluetooth")
     parser.add_argument("--simulate", action="store_true")
     args = parser.parse_args()
 
@@ -315,7 +406,7 @@ def main() -> int:
         print(f"Simulating pointer into {args.output}")
         run_simulation(args.output, stop)
     else:
-        run_serial(args, args.output, stop)
+        run_device(args, args.output, stop)
     return 0
 
 
