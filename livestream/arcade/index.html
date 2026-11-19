@@ -74,6 +74,7 @@
       <footer>
         <div class="status" id="status"></div>
         <div class="links">
+          <button class="link" id="fullscreen">Fullscreen (F)</button>
           <button class="link" id="calibrate">Calibrate wand (C)</button>
           <a class="link" href="measure.html">Pointing check</a>
         </div>
@@ -94,7 +95,7 @@
     </div>
 
     <script type="module">
-      import { createWand, runCalibration, starsFor, mountGame } from '../sdk/index.js';
+      import { createWand, runCalibration, starsFor, mountGame, bindFullscreenKey, toggleFullscreen } from '../sdk/index.js';
       import { games, RUN_ORDER } from './games/index.js';
 
       const wand = createWand({ surface: 'arcade' });
@@ -141,6 +142,8 @@
 
         document.querySelector('#playAll').addEventListener('click', startRun);
         document.querySelector('#calibrate').addEventListener('click', () => runCalibration(wand));
+        document.querySelector('#fullscreen').addEventListener('click', toggleFullscreen);
+        bindFullscreenKey();
 
         games.forEach((g, i) => {
           const b = best(g.id);

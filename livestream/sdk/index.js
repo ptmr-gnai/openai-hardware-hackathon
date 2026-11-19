@@ -34,6 +34,24 @@ export { dodgeLayer } from '../arcade/games/duck.js';
 export const INPUTS = ['wand', 'body', 'voice'];
 
 /**
+ * F toggles page fullscreen. Note: browsers leave page fullscreen on navigation,
+ * so for multi-page flows (menu → game → Play all) use the browser window's own
+ * full screen instead (macOS Chrome: Ctrl+Cmd+F, toolbar hidden).
+ */
+export function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+}
+let fullscreenKeyBound = false;
+export function bindFullscreenKey(key = 'f') {
+  if (fullscreenKeyBound) return;
+  fullscreenKeyBound = true;
+  addEventListener('keydown', event => {
+    if (event.key.toLowerCase() === key && !event.repeat && !event.target?.closest?.('input, textarea')) toggleFullscreen();
+  });
+}
+
+/**
  * Validate a game object and fill in defaults.
  *
  * Required: id, title, duration (s), init(ctx), update(state, ctx, dt), draw(state, ctx).
@@ -71,6 +89,7 @@ export function defineGame(spec) {
 export function mountGame(game, { canvas, wand = null, surface = 'arcade', onExit = () => { location.href = '/arcade/'; }, ...runOptions } = {}) {
   wand ??= createWand({ surface });
   wand.attachMouse(canvas);
+  bindFullscreenKey();
   canvas.hidden = false;
   addEventListener('keydown', event => {
     if (event.key.toLowerCase() === 'c' && !wand.capturing) runCalibration(wand);

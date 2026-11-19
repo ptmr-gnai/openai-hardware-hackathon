@@ -105,7 +105,9 @@ scaffolds one from the template and the playground runs it directly.
 The home page lists the four games and a **Play all** run (Balloon Pop → Bob & Weave →
 Bodega Bucks → Gauntlet) that ends on a summary with 1–3 stars per game (thresholds
 are each game's `stars`). Keys: `1`–`4` open a game, `Enter` plays all, `Esc` returns
-to the menu.
+to the menu, `F` toggles page fullscreen. For a demo, use the browser window's own full
+screen instead (macOS Chrome: Ctrl+Cmd+F, untick View → "Always Show Toolbar in Full
+Screen"): page fullscreen ends on navigation, and the arcade loads a page per game.
 
 With the server and pointer bridge running, open <http://127.0.0.1:8765/arcade/>.
 Press `C` once to calibrate the wand for the full-screen arcade surface.
