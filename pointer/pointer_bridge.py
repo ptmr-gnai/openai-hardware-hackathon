@@ -78,6 +78,9 @@ class PointerMapper:
 
 
 AXES = {"x": 0, "y": 1, "z": 2}
+# Identifies this bridge run. rawYaw restarts from 0 with every run, so the
+# browser uses this to know when a saved yaw center is no longer valid.
+SESSION = f"{int(time.time())}-{os.getpid()}"
 
 
 def _dot(a, b):
@@ -228,6 +231,7 @@ class GyroPointerMapper:
             "pressYaw": round(self.press_yaw, 3),
             "pressPitch": {k: round(v, 3) for k, v in self.press_pitch.items()},
             "recenterCount": self.recenter_count,
+            "session": SESSION,
             "mode": "gyro",
             "transport": "usb",
         }

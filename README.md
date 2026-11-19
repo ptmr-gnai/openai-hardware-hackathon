@@ -73,3 +73,23 @@ Button A is the trigger; Button B recenters the pointer. For frontend-only testi
 ```sh
 work/platformio-venv/bin/python pointer/pointer_bridge.py --simulate
 ```
+
+## Wand Arcade (minigames)
+
+With the server and pointer bridge running, open <http://127.0.0.1:8765/arcade/>.
+Press `C` once to calibrate the wand for the full-screen arcade surface.
+
+Games are built from shared parts in `livestream/lib/`:
+
+| Part | Role |
+|---|---|
+| `wand.js` | Bridge → calibrated pointer, `shoot` (A) / `recenter` (B) events, mouse fallback |
+| `calibrate.js` | 5-target calibration overlay |
+| `engine.js` | Canvas, intro → countdown → play → results lifecycle, HUD, reticle, best scores |
+| `fx.js` | Particle bursts and floating score text |
+| `sound.js` | Synthesized sound effects (no assets) |
+| `filters.js` | 1€ smoothing filter |
+
+A minigame is one file in `livestream/arcade/games/` exporting
+`{ id, title, blurb, duration, init, update, draw, shoot }`, registered in
+`games/index.js`. See `balloons.js` (Balloon Pop: 15 s, gold balloons = 3 pts).

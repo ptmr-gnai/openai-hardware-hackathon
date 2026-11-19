@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Wand Arcade</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b1020; color: #fff; font-family: system-ui, sans-serif; overflow: hidden; }
+      [hidden] { display: none !important; }
+      canvas { display: block; cursor: none; }
+      #menu { position: fixed; inset: 0; display: grid; place-content: center; gap: 24px; text-align: center; }
+      #menu h1 { font-size: 64px; margin: 0; }
+      #menu .games { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+      #menu button { background: #1c2541; color: #fff; border: 2px solid #3a506b; border-radius: 16px; padding: 28px 36px; font: 700 26px system-ui; cursor: pointer; min-width: 260px; }
+      #menu button:hover, #menu button.aim { border-color: #ffdc5d; transform: scale(1.04); }
+      #menu small { display: block; font-weight: 500; font-size: 15px; opacity: .75; margin-top: 8px; }
+      #menu p { opacity: .7; }
+      #menuCursor { position: fixed; width: 26px; height: 26px; border: 3px solid #ffdc5d; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage" hidden></canvas>
+    <div id="menu" hidden>
+      <h1>Wand Arcade</h1>
+      <div class="games" id="gameList"></div>
+      <p>Point with the StickS3 and press A to choose · C calibrates · B recenters</p>
+      <div id="menuCursor"></div>
+    </div>
+    <script type="module">
+      import { createWand } from '../lib/wand.js';
+      import { runCalibration } from '../lib/calibrate.js';
+      import { runMinigame } from '../lib/engine.js';
+      import { games } from './games/index.js';
+
+      const wand = createWand({ surface: 'arcade' });
+      const params = new URLSearchParams(location.search);
+      const game = games.find(g => g.id === params.get('game'));
+      const toMenu = () => { location.search = ''; };
+
+      addEventListener('keydown', event => {
+        if (event.key.toLowerCase() === 'c' && !wand.capturing) runCalibration(wand);
+      });
+
+      if (game) {
+        const canvas = document.querySelector('#stage');
+        canvas.hidden = false;
+        wand.attachMouse(canvas);
+        runMinigame(game, { canvas, wand, onExit: toMenu });
+      } else {
+        // Menu: the wand acts as a mouse — point at a card and press A.
+        const menu = document.querySelector('#menu');
+        const cursor = document.querySelector('#menuCursor');
+        const list = document.querySelector('#gameList');
+        menu.hidden = false;
+        wand.attachMouse(menu);
+        for (const g of games) {
+          const button = document.createElement('button');
+          button.innerHTML = `${g.title}<small>${g.duration}s · ${g.blurb}</small>`;
+          button.addEventListener('click', () => { location.search = `?game=${g.id}`; });
+          list.append(button);
+        }
+        const target = () => document.elementFromPoint(wand.state.x * innerWidth, wand.state.y * innerHeight)?.closest('button');
+        wand.on('shoot', ({ source }) => { if (source === 'wand') target()?.click(); });
+        (function tick() {
+          cursor.style.left = `${wand.state.x * 100}%`;
+          cursor.style.top = `${wand.state.y * 100}%`;
+          list.querySelectorAll('button').forEach(b => b.classList.toggle('aim', b === target()));
+          requestAnimationFrame(tick);
+        })();
+      }
+    </script>
+  </body>
+</html>
