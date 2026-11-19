@@ -236,6 +236,7 @@ function drawTicket(g, ctx, ticket) {
     g.lineWidth = 6;
     g.font = `900 ${L.w * (win?.jackpot ? 0.13 : 0.11)}px system-ui`;
     const text = win ? (win.jackpot ? 'JACKPOT!' : `WIN ${money(win.prize)}`) : 'NOT A WINNER';
+    g.lineJoin = 'round';
     g.strokeText(text, 0, 0);
     g.fillText(text, 0, 0);
     if (win?.jackpot) {
@@ -251,6 +252,10 @@ function drawTicket(g, ctx, ticket) {
 export default {
   id: 'scratch',
   title: 'Bodega Bucks',
+  tagline: 'Shake the wand to scratch lotto tickets.',
+  icon: '🎟️',
+  inputs: ['wand'],
+  stars: [10, 100, 1000],
   blurb: `Point at the ticket and SHAKE the wand to scratch. Match 3 to win. ${DURATION} s.`,
   duration: DURATION,
   formatScore: money,

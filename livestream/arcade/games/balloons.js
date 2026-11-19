@@ -192,6 +192,10 @@ let sceneTime = 0;
 export default {
   id: 'balloons',
   title: 'Balloon Pop',
+  tagline: 'Point and shoot. Say a theme to change the targets.',
+  icon: '🎈',
+  inputs: ['wand', 'voice'],
+  stars: [8, 15, 22],
   blurb: `Pop as many as you can in ${DURATION} seconds. Gold = 3 points. Say a theme to change them!`,
   duration: DURATION,
   themed: true,

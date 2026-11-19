@@ -3,48 +3,123 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Wand Arcade</title>
+    <title>Codex Arcade</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #0b1020; color: #fff; font-family: system-ui, sans-serif; overflow: hidden; }
+      :root { --bg: #0e0f12; --surface: #16181d; --line: #2a2d35; --text: #f2f3f5; --muted: #8b8f9a; --accent: #f2f3f5; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
       [hidden] { display: none !important; }
       canvas { display: block; cursor: none; }
-      #menu { position: fixed; inset: 0; display: grid; place-content: center; gap: 24px; text-align: center; }
-      #menu h1 { font-size: 64px; margin: 0; }
-      #menu .games { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
-      #menu button { background: #1c2541; color: #fff; border: 2px solid #3a506b; border-radius: 16px; padding: 28px 36px; font: 700 26px system-ui; cursor: pointer; min-width: 260px; }
-      #menu button:hover, #menu button.aim { border-color: #ffdc5d; transform: scale(1.04); }
-      #menu small { display: block; font-weight: 500; font-size: 15px; opacity: .75; margin-top: 8px; }
-      #menu p { opacity: .7; }
-      #menuCursor { position: fixed; width: 26px; height: 26px; border: 3px solid #ffdc5d; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+      button, a { font: inherit; color: inherit; }
+
+      /* ---------- home ---------- */
+      #menu { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr auto; gap: 40px; padding: 56px 64px 32px; box-sizing: border-box; }
+      header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+      h1 { margin: 0; font-size: 44px; font-weight: 700; letter-spacing: -.02em; }
+      .sub { margin: 8px 0 0; color: var(--muted); font-size: 16px; }
+      .primary { cursor: pointer; border: 0; border-radius: 10px; background: var(--accent); color: #0e0f12; padding: 14px 22px; text-align: left; }
+      .primary strong { display: block; font-size: 18px; }
+      .primary span { font-size: 13px; color: #555a66; }
+      .primary:hover, .primary.aim { outline: 3px solid #ffffff55; outline-offset: 3px; }
+
+      .games { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-content: center; }
+      @media (max-width: 1000px) { .games { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      .card {
+        cursor: pointer; text-align: left; display: grid; grid-template-rows: auto auto 1fr auto; gap: 8px;
+        min-height: 220px; padding: 22px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface);
+        transition: border-color .12s, background .12s;
+      }
+      .card:hover, .card.aim { border-color: var(--text); background: #1b1e24; }
+      .num { color: var(--muted); font: 600 13px ui-monospace, Menlo, monospace; }
+      .card h2 { margin: 0; font-size: 22px; font-weight: 650; }
+      .card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.4; }
+      .card .meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 13px; }
+      .card .meta b { color: var(--text); font-weight: 600; }
+
+      footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 13px; }
+      .status { display: flex; gap: 18px; flex-wrap: wrap; }
+      .status span::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #4a4e59; margin-right: 7px; vertical-align: 1px; }
+      .status span.on { color: var(--text); }
+      .status span.on::before { background: #3ecf8e; }
+      .links { display: flex; gap: 18px; }
+      .link { cursor: pointer; background: none; border: 0; padding: 0; color: var(--muted); text-decoration: none; font-size: 13px; }
+      .link:hover, .link.aim { color: var(--text); text-decoration: underline; }
+      #menuCursor { position: fixed; width: 22px; height: 22px; border: 2px solid var(--text); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 10; }
+
+      /* ---------- run summary ---------- */
+      #summary { position: fixed; inset: 0; display: grid; place-items: center; background: #0e0f12f2; z-index: 20; }
+      .panel { width: min(640px, 90vw); }
+      .panel h2 { margin: 0; font-size: 34px; font-weight: 700; }
+      .panel .total { margin: 6px 0 24px; color: var(--muted); font-size: 16px; }
+      table { width: 100%; border-collapse: collapse; font-size: 16px; }
+      td { padding: 14px 0; border-top: 1px solid var(--line); }
+      td small { display: block; color: var(--muted); font-size: 13px; margin-top: 3px; }
+      td.score { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+      td.stars { text-align: right; width: 72px; color: var(--muted); letter-spacing: 1px; }
+      tr.skipped { color: var(--muted); }
+      .panel .buttons { display: flex; gap: 20px; align-items: center; margin-top: 28px; }
     </style>
   </head>
   <body>
     <canvas id="stage" hidden></canvas>
+
     <div id="menu" hidden>
-      <h1>Wand Arcade</h1>
-      <div class="games" id="gameList"></div>
-      <p>Point with the StickS3 and press A to choose · C calibrates · B recenters</p>
+      <header>
+        <div>
+          <h1>Codex Arcade</h1>
+          <p class="sub">Four short games for the StickS3 wand and a webcam.</p>
+        </div>
+        <button class="primary" id="playAll"><strong>Play all</strong><span>4 games · about 2 minutes</span></button>
+      </header>
+      <section class="games" id="gameList"></section>
+      <footer>
+        <div class="status" id="status"></div>
+        <div class="links">
+          <button class="link" id="calibrate">Calibrate wand (C)</button>
+          <a class="link" href="measure.html">Pointing check</a>
+        </div>
+      </footer>
       <div id="menuCursor"></div>
     </div>
+
+    <div id="summary" hidden>
+      <div class="panel">
+        <h2>Run complete</h2>
+        <div class="total" id="totalStars"></div>
+        <table id="rows"></table>
+        <div class="buttons">
+          <button class="primary" id="again"><strong>Play again</strong></button>
+          <button class="link" id="toMenu">Back to menu</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module">
       import { createWand } from '../lib/wand.js';
       import { runCalibration } from '../lib/calibrate.js';
-      import { runMinigame } from '../lib/engine.js';
+      import { runMinigame, starsFor } from '../lib/engine.js';
       import { createBody } from '../lib/body.js';
       import { createVoice } from '../lib/voice.js';
       import { theme, resolveTheme } from '../lib/theme.js';
-      import { games } from './games/index.js';
+      import { games, RUN_ORDER } from './games/index.js';
 
       const wand = createWand({ surface: 'arcade' });
       const params = new URLSearchParams(location.search);
       const game = games.find(g => g.id === params.get('game'));
+      const byId = id => games.find(g => g.id === id);
       const toMenu = () => { location.search = ''; };
+
+      // ---- run state (Play all): survives the page loads between games ----
+      const RUN_KEY = 'arcade.run';
+      const loadRun = () => { try { return JSON.parse(sessionStorage.getItem(RUN_KEY)) ?? { results: {} }; } catch { return { results: {} }; } };
+      const saveRun = run => { try { sessionStorage.setItem(RUN_KEY, JSON.stringify(run)); } catch {} };
+      const startRun = () => { saveRun({ started: Date.now(), results: {} }); location.search = `?game=${RUN_ORDER[0]}&run=0`; };
 
       addEventListener('keydown', event => {
         if (event.key.toLowerCase() === 'c' && !wand.capturing) runCalibration(wand);
       });
 
       if (game) {
+        // ---------------- a game ----------------
         const canvas = document.querySelector('#stage');
         canvas.hidden = false;
         wand.attachMouse(canvas);
@@ -52,9 +127,19 @@
         body?.start().catch(error => console.warn('Body tracking unavailable:', error));
         // Voice themes only where targets are themeable (avoids room-chatter toasts elsewhere).
         const voice = game.themed ? createVoice() : null;
-        const engine = runMinigame(game, { canvas, wand, body, voice, onExit: toMenu });
+
+        const step = Number(params.get('run'));
+        const inRun = params.has('run') && RUN_ORDER[step] === game.id;
+        const nextId = inRun ? RUN_ORDER[step + 1] : null;
+        const engine = runMinigame(game, {
+          canvas, wand, body, voice, onExit: toMenu,
+          stage: inRun ? { index: step, total: RUN_ORDER.length } : null,
+          next: !inRun ? null : nextId
+            ? { label: byId(nextId).title, go: () => { location.search = `?game=${nextId}&run=${step + 1}`; } }
+            : { label: 'run results', go: () => { location.search = '?run=done'; } },
+          onFinish: inRun ? result => { const run = loadRun(); run.results[game.id] = result; saveRun(run); } : null,
+        });
         // Say a theme ("teddy bears") → the targets change, mid-round included.
-        // Always listening, so phrases with no theme in them are ignored quietly.
         voice?.on('command', async text => {
           const next = await resolveTheme(text);
           if (!next) return;
@@ -62,26 +147,99 @@
           engine.toast(next.sprite ? `${next.sprite}  ${next.name}!` : 'Back to balloons');
         });
       } else {
-        // Menu: the wand acts as a mouse — point at a card and press A.
+        // ---------------- home ----------------
         const menu = document.querySelector('#menu');
         const cursor = document.querySelector('#menuCursor');
         const list = document.querySelector('#gameList');
         menu.hidden = false;
         wand.attachMouse(menu);
-        for (const g of games) {
-          const button = document.createElement('button');
-          button.innerHTML = `${g.title}<small>${g.blurb}</small>`;
-          button.addEventListener('click', () => { location.search = `?game=${g.id}`; });
-          list.append(button);
+
+        const INPUTS = { wand: 'Wand', body: 'Body', voice: 'Voice' };
+        const best = id => { try { return Number(localStorage.getItem(`arcade.best.${id}`)) || 0; } catch { return 0; } };
+        const fmt = (g, score) => (g.formatScore ? g.formatScore(score) : `${score}`);
+        const starText = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+
+        document.querySelector('#playAll').addEventListener('click', startRun);
+        document.querySelector('#calibrate').addEventListener('click', () => runCalibration(wand));
+
+        games.forEach((g, i) => {
+          const b = best(g.id);
+          const card = document.createElement('button');
+          card.className = 'card';
+          card.innerHTML = `
+            <span class="num">0${i + 1}</span>
+            <h2>${g.title}</h2>
+            <p>${g.tagline ?? g.blurb}</p>
+            <div class="meta">
+              <span>${(g.inputs ?? []).map(k => INPUTS[k] ?? k).join(' · ')}</span>
+              <span>${b ? `Best <b>${fmt(g, b)}</b>` : ''}</span>
+            </div>`;
+          card.addEventListener('click', () => { location.search = `?game=${g.id}`; });
+          list.append(card);
+        });
+
+        addEventListener('keydown', event => {
+          if (wand.capturing || !document.querySelector('#summary').hidden) return;
+          const n = Number(event.key);
+          if (n >= 1 && n <= games.length) location.search = `?game=${games[n - 1].id}`;
+          if (event.key === 'Enter') startRun();
+        });
+
+        // Hardware status: wand link, calibration, distance, heart rate.
+        const statusEl = document.querySelector('#status');
+        async function refreshStatus() {
+          let transport = null;
+          let bpm = null;
+          try {
+            const p = await (await fetch(`/pointer.json?t=${Date.now()}`, { cache: 'no-store' })).json();
+            transport = p.connected && Date.now() / 1000 - p.timestamp < 1 ? p.transport : null;
+          } catch {}
+          try {
+            const h = await (await fetch(`/hr.json?t=${Date.now()}`, { cache: 'no-store' })).json();
+            bpm = h.connected && Date.now() - Date.parse(h.timestamp) < 5000 ? h.bpm : null;
+          } catch {}
+          const ws = wand.state;
+          const item = (on, text) => `<span class="${on ? 'on' : ''}">${text}</span>`;
+          statusEl.innerHTML = [
+            item(transport, transport ? `Wand (${transport.toUpperCase()})` : 'Wand offline'),
+            item(ws.calibrated, ws.calibrated ? 'Calibrated' : 'Not calibrated'),
+            ws.distanceMm ? item(true, `${(ws.distanceMm / 1000).toFixed(2)} m`) : '',
+            item(bpm, bpm ? `${bpm} bpm` : 'Heart rate off'),
+          ].join('');
         }
-        const target = () => document.elementFromPoint(wand.state.x * innerWidth, wand.state.y * innerHeight)?.closest('button');
+        refreshStatus();
+        setInterval(refreshStatus, 1000);
+
+        // The wand acts as a mouse here: point at something and press A.
+        const target = () => document.elementFromPoint(wand.state.x * innerWidth, wand.state.y * innerHeight)?.closest('button, a');
         wand.on('shoot', ({ source }) => { if (source === 'wand') target()?.click(); });
         (function tick() {
           cursor.style.left = `${wand.state.x * 100}%`;
           cursor.style.top = `${wand.state.y * 100}%`;
-          list.querySelectorAll('button').forEach(b => b.classList.toggle('aim', b === target()));
+          const t = target();
+          document.querySelectorAll('.card, .primary, .link').forEach(el => el.classList.toggle('aim', el === t));
           requestAnimationFrame(tick);
         })();
+
+        // ---- run summary (?run=done) ----
+        if (params.get('run') === 'done') {
+          const { results } = loadRun();
+          document.querySelector('#rows').innerHTML = RUN_ORDER.map(id => {
+            const g = byId(id);
+            const r = results[id];
+            return `<tr class="${r ? '' : 'skipped'}">
+              <td>${g.title}<small>${r?.summary ?? 'Skipped'}</small></td>
+              <td class="score">${r ? r.display : '—'}</td>
+              <td class="stars">${r && g.stars ? starText(r.stars) : ''}</td>
+            </tr>`;
+          }).join('');
+          const total = RUN_ORDER.reduce((sum, id) => sum + (results[id]?.stars ?? 0), 0);
+          document.querySelector('#totalStars').textContent = `${total} of ${RUN_ORDER.length * 3} stars`;
+          document.querySelector('#summary').hidden = false;
+          document.querySelector('#again').addEventListener('click', startRun);
+          document.querySelector('#toMenu').addEventListener('click', toMenu);
+          addEventListener('keydown', e => { if (e.key === 'Enter') startRun(); if (e.key === 'Escape') toMenu(); });
+        }
       }
     </script>
   </body>

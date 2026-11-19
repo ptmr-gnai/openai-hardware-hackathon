@@ -9,6 +9,10 @@ const BALLOON_RATE = 0.55; // fewer balloons than Balloon Pop: you're busy dodgi
 export default {
   id: 'gauntlet',
   title: 'Gauntlet',
+  tagline: 'Dodge with your body while you shoot.',
+  icon: '🔥',
+  inputs: ['body', 'wand', 'voice'],
+  stars: [6, 12, 18],
   blurb: `Duck & dodge with your body, pop balloons with the wand. ${DURATION} s.`,
   duration: DURATION,
   needs: ['body'],

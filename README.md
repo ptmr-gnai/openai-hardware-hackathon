@@ -97,7 +97,12 @@ Button A is the trigger; Button B recenters the pointer. For frontend-only testi
 work/platformio-venv/bin/python pointer/pointer_bridge.py --simulate
 ```
 
-## Wand Arcade (minigames)
+## Codex Arcade (minigames)
+
+The home page lists the four games and a **Play all** run (Balloon Pop → Bob & Weave →
+Bodega Bucks → Gauntlet) that ends on a summary with 1–3 stars per game (thresholds
+are each game's `stars`). Keys: `1`–`4` open a game, `Enter` plays all, `Esc` returns
+to the menu.
 
 With the server and pointer bridge running, open <http://127.0.0.1:8765/arcade/>.
 Press `C` once to calibrate the wand for the full-screen arcade surface.

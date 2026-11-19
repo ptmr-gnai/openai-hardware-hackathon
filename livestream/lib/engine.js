@@ -12,6 +12,11 @@
 //     themed: true }                       // optional; listen for voice themes
 //
 // Lifecycle: intro --shoot--> countdown (3 s) --> play (duration) --> results --shoot--> countdown ...
+//
+// Run mode (several games back to back): pass `stage: { index, total }` to label
+// the intro, `next: { label, go() }` so results advance to the next game instead
+// of replaying, and `onFinish(result)` to collect { score, display, stars, summary }.
+// Games may declare `stars: [one, two, three]` score thresholds for the summary.
 import { createFx } from './fx.js';
 import { sfx } from './sound.js';
 import { theme } from './theme.js';
@@ -55,12 +60,18 @@ function label(g, text, x, y, { size = 32, weight = 800, color = '#fff', align =
   g.textBaseline = 'middle';
   g.lineWidth = Math.max(3, size / 8);
   g.strokeStyle = '#0009';
+  // Round joins: the default miter join spikes on sharp glyph corners (y, M, V…).
+  g.lineJoin = 'round';
   g.strokeText(text, x, y);
   g.fillStyle = color;
   g.fillText(text, x, y);
 }
 
-export function runMinigame(game, { canvas, wand, body = null, voice = null, onExit } = {}) {
+export function starsFor(game, score) {
+  return (game.stars ?? []).filter(threshold => score >= threshold).length;
+}
+
+export function runMinigame(game, { canvas, wand, body = null, voice = null, onExit, stage = null, next = null, onFinish } = {}) {
   const g = canvas.getContext('2d');
   let W = 0;
   let H = 0;
@@ -115,11 +126,18 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
       run.newBest = true;
       saveBest(game.id, run.score);
     }
+    onFinish?.({
+      id: game.id, title: game.title, score: run.score, display: fmt(run.score),
+      stars: starsFor(game, run.score), summary: game.summary ? game.summary(state, run) : null,
+    });
   }
+  // From the results screen: next game in a run, otherwise play again.
+  const advance = () => (next ? next.go() : start());
 
   wand.on('shoot', ({ x, y }) => {
     flash = 1;
-    if (run.phase === 'intro' || (run.phase === 'results' && run.phaseT > 1.2)) return start();
+    if (run.phase === 'intro') return start();
+    if (run.phase === 'results' && run.phaseT > 1.2) return advance();
     if (run.phase !== 'play' || !game.shoot) return;
     run.shots += 1;
     sfx.shoot();
@@ -127,7 +145,8 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
     else fx.puff(x * W, y * H);
   });
   addEventListener('keydown', event => {
-    if (event.key === 'Enter' && (run.phase === 'intro' || (run.phase === 'results' && run.phaseT > 1.2))) start();
+    if (event.key === 'Enter' && run.phase === 'intro') start();
+    if (event.key === 'Enter' && run.phase === 'results' && run.phaseT > 1.2) advance();
     if (event.key === 'Escape' && !wand.capturing) onExit?.();
   });
 
@@ -175,6 +194,7 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
     }
     if (run.phase === 'play' && run.phaseT < 0.6) label(g, 'GO!', W / 2, H / 2, { size: s * 0.2 });
     if (run.phase === 'intro') {
+      if (stage) label(g, `GAME ${stage.index + 1} / ${stage.total}`, W / 2, H * 0.24, { size: s * 0.035, color: '#ffdc5d' });
       label(g, game.title, W / 2, H * 0.36, { size: s * 0.11 });
       label(g, game.blurb, W / 2, H * 0.36 + s * 0.11, { size: s * 0.035, weight: 600 });
       label(g, game.needs?.includes('body') ? 'Press A, click or Enter to start' : 'Press A (or click) to start', W / 2, H * 0.62, { size: s * 0.045, color: '#ffdc5d' });
@@ -189,7 +209,12 @@ export function runMinigame(game, { canvas, wand, body = null, voice = null, onE
       label(g, run.newBest ? 'NEW BEST!' : `Best: ${fmt(run.best)}`, W / 2, H * 0.58, { size: s * 0.045, color: run.newBest ? '#06d6a0' : '#fff' });
       const stats = game.summary ? game.summary(state, run) : `${run.hits}/${run.shots} shots · ${accuracy}% accuracy`;
       label(g, stats, W / 2, H * 0.65, { size: s * 0.032, weight: 600 });
-      if (run.phaseT > 1.2) label(g, 'Press A to play again · Esc for menu', W / 2, H * 0.76, { size: s * 0.035, color: '#ffdc5d' });
+      const stars = starsFor(game, run.score);
+      if (game.stars) label(g, '★'.repeat(stars) + '☆'.repeat(3 - stars), W / 2, H * 0.84, { size: s * 0.06, color: '#ffd60a' });
+      if (run.phaseT > 1.2) {
+        label(g, next ? `Press A for next: ${next.label} · Esc quits the run` : 'Press A to play again · Esc for menu',
+          W / 2, H * 0.76, { size: s * 0.035, color: '#ffdc5d' });
+      }
     }
     if (voice?.supported) {
       // Always-on mic: a quiet status line, plus a live caption while you talk.

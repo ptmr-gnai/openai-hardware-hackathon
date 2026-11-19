@@ -39,6 +39,7 @@ export function createFx() {
         g.globalAlpha = Math.min(1, t.life * 2);
         g.lineWidth = 5;
         g.strokeStyle = '#0008';
+        g.lineJoin = 'round';
         g.strokeText(t.label, t.x, t.y);
         g.fillStyle = t.color;
         g.fillText(t.label, t.x, t.y);

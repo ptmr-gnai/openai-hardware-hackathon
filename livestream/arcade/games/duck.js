@@ -289,6 +289,10 @@ export const dodgeLayer = {
 export default {
   id: 'duck',
   title: 'Bob & Weave',
+  tagline: 'Duck and dodge with your whole body.',
+  icon: '🥊',
+  inputs: ['body'],
+  stars: [4, 8, 12],
   blurb: `Duck under high beams, dodge side blocks, back to center between. ${DURATION} s.`,
   duration: DURATION,
   needs: ['body'],
