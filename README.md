@@ -94,7 +94,7 @@ Games are built from shared parts in `livestream/lib/`:
 | `fx.js` | Particle bursts and floating score text |
 | `sound.js` | Synthesized sound effects (no assets) |
 | `filters.js` | 1€ smoothing filter |
-| `body.js` | Webcam pose tracking (MediaPipe, local): `duck`, `duckAmount`, `lean`, `hands`, camera preview |
+| `body.js` | Webcam pose tracking (MediaPipe, local): `duck`, `duckAmount`, `side`, `sideAmount`, `lean`, `hands`, camera preview |
 
 Camera games need the pose model once (downloads into git-ignored `livestream/vendor/`):
 
@@ -102,9 +102,10 @@ Camera games need the pose model once (downloads into git-ignored `livestream/ve
 ./scripts/setup-vision.sh
 ```
 
-**Duck!** — beams fly at head height; duck under each, stand back up between them.
-`R` recalibrates standing height, `Space`/`↓` ducks from the keyboard, `[` / `]`
-adjust beam speed (default 85%, or `?speed=0.7`).
+**Bob & Weave** (15 s) — high beams: duck; side blocks: move your head the other
+way; return to center between obstacles. `R` recalibrates standing position,
+`Space`/`↓` ducks and `←`/`→` dodge from the keyboard, `[` / `]` adjust speed
+(default 85%, or `?speed=0.7`).
 
 A minigame is one file in `livestream/arcade/games/` exporting
 `{ id, title, blurb, duration, init, update, draw }` plus optional `shoot`, `needs: ['body']` and `summary`, registered in

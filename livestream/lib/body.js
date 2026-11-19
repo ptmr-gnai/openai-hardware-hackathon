@@ -3,11 +3,14 @@
 //   body.ready       tracking + standing calibration done
 //   body.duck        head is clearly below standing height
 //   body.duckAmount  0 = standing, 1 = at the duck threshold, >1 deeper
-//   body.lean        −1 (left) … +1 (right), mirrored like a selfie view
+//   body.side        −1 head moved left, 0 centered, +1 moved right (from standing spot)
+//   body.sideAmount  signed; ±1 = at the dodge threshold (mirrored like a selfie view)
+//   body.lean        −1 (left) … +1 (right), head relative to shoulders
 //   body.head, body.hands[]   normalized {x, y}, mirrored
 //   body.status      human-readable state for the UI
 //
-// Keyboard fallback (for building without a camera): hold Space or ↓ to duck.
+// Keyboard fallback (for building without a camera): hold Space or ↓ to duck,
+// ← / → to dodge sideways.
 // Ducking recipe adapted from the pulse-play branch's camera.js.
 const VENDOR = '/vendor/mediapipe';
 const CALIBRATION_FRAMES = 45;
@@ -29,10 +32,17 @@ export function createBody() {
     hands: [],
     landmarks: null,
     status: 'Camera off',
+    side: 0,
+    sideAmount: 0,
     baseline: null,
+    baselineX: null,
     threshold: 0.08,
+    sideThreshold: 0.08,
     keyDuck: false,
+    keySide: 0,
     get ducking() { return this.keyDuck || this.duck; },
+    get dodgeSide() { return this.keySide || this.side; },
+    get dodgeAmount() { return this.keySide ? this.keySide * 1.2 : this.sideAmount; },
     async start() {
       try {
         body.status = 'Loading pose model…';
@@ -90,6 +100,19 @@ export function createBody() {
       g.restore();
       const px = p => x + (1 - p.x) * w;
       const py = p => y + p.y * h;
+      if (body.baselineX !== null) {
+        g.strokeStyle = body.dodgeSide ? '#06d6a0' : '#ffffff88';
+        g.setLineDash([4, 6]);
+        g.lineWidth = 2;
+        g.beginPath();
+        for (const dx of [-body.sideThreshold, body.sideThreshold]) {
+          const lx = x + (1 - (body.baselineX + dx)) * w;
+          g.moveTo(lx, y);
+          g.lineTo(lx, y + h);
+        }
+        g.stroke();
+        g.setLineDash([]);
+      }
       if (body.baseline !== null) {
         const lineY = y + (body.baseline + body.threshold) * h;
         g.strokeStyle = body.ducking ? '#06d6a0' : '#ffdc5d';
@@ -134,7 +157,7 @@ export function createBody() {
     const visible = p && p[0].visibility > 0.6 && p[11].visibility > 0.6 && p[12].visibility > 0.6;
     if (!visible) {
       if (performance.now() - lastSeen > 600) {
-        Object.assign(body, { tracking: false, duck: false, duckAmount: 0, hands: [], head: null });
+        Object.assign(body, { tracking: false, duck: false, duckAmount: 0, side: 0, sideAmount: 0, hands: [], head: null });
         body.status = 'Step into view — head and shoulders visible';
       }
       return;
@@ -150,18 +173,23 @@ export function createBody() {
     body.lean = Math.max(-1, Math.min(1, -((p[0].x - shoulderMid) / Math.max(0.05, shoulderWidth)) * 1.5));
 
     if (body.baseline === null) {
-      samples.push(p[0].y);
+      samples.push({ x: p[0].x, y: p[0].y });
       body.status = `Stand tall — calibrating ${Math.round((samples.length / CALIBRATION_FRAMES) * 100)}%`;
       if (samples.length >= CALIBRATION_FRAMES) {
-        body.baseline = samples.reduce((a, b) => a + b, 0) / samples.length;
+        body.baseline = samples.reduce((a, b) => a + b.y, 0) / samples.length;
+        body.baselineX = samples.reduce((a, b) => a + b.x, 0) / samples.length;
         body.threshold = Math.max(0.07, shoulderWidth * 0.35);
+        body.sideThreshold = Math.max(0.06, shoulderWidth * 0.5);
         body.ready = true;
       }
       return;
     }
     body.duckAmount = Math.max(0, (p[0].y - body.baseline) / body.threshold);
     body.duck = body.duckAmount >= 1;
-    body.status = body.duck ? 'Ducking' : 'Tracking';
+    // Camera x is unmirrored: moving to your right lowers p.x.
+    body.sideAmount = (body.baselineX - p[0].x) / body.sideThreshold;
+    body.side = body.sideAmount >= 1 ? 1 : body.sideAmount <= -1 ? -1 : 0;
+    body.status = body.duck ? 'Ducking' : body.side ? 'Dodging' : 'Tracking';
   }
 
   function loop() {
@@ -180,7 +208,14 @@ export function createBody() {
   const duckKeys = ['Space', 'ArrowDown'];
   addEventListener('keydown', e => { if (duckKeys.includes(e.code)) { e.preventDefault(); body.keyDuck = true; } });
   addEventListener('keyup', e => { if (duckKeys.includes(e.code)) body.keyDuck = false; });
-  addEventListener('blur', () => { body.keyDuck = false; });
+  addEventListener('keydown', e => {
+    if (e.code === 'ArrowLeft') body.keySide = -1;
+    if (e.code === 'ArrowRight') body.keySide = 1;
+  });
+  addEventListener('keyup', e => {
+    if ((e.code === 'ArrowLeft' && body.keySide === -1) || (e.code === 'ArrowRight' && body.keySide === 1)) body.keySide = 0;
+  });
+  addEventListener('blur', () => { body.keyDuck = false; body.keySide = 0; });
   addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r') body.calibrate(); });
 
   return body;
